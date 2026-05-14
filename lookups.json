@@ -1,0 +1,9 @@
+{
+  "Platform": ["Astro", "Blade", "Cetus", "Draco", "Eagle", "Falcon", "Gemini"],
+  "ODM": ["Chicony", "Darfon", "Jabil", "Lite-On", "Mitsumi", "Primax", "Sunrex"],
+  "GBU": ["Commercial", "Consumer", "Gaming"],
+  "GTK Supplier": ["Foxconn", "Inventec", "Pegatron", "Quanta", "Wistron"],
+  "Sub-Category": ["Keyboard", "Mouse", "Headset", "Webcam", "Docking", "Stylus"],
+  "ESR need (Y/N)": ["Y", "N"],
+  "Status": ["Pending", "In Progress", "Completed", "Cancelled", "On Hold"]
+}

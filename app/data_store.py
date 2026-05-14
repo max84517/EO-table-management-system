@@ -41,6 +41,7 @@ DISPLAY_COLUMNS = [
     "Actual Payment",
     "Status",
     "Payment Received Date",
+    "PL",
     "Payment Received Quarter",
     "Update Date",
 ]

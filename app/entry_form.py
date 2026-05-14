@@ -171,7 +171,7 @@ class EntryFormDialog(ctk.CTkToplevel):
     """Modal dialog for adding or editing a row."""
 
     def __init__(self, parent, existing_row: Optional[dict] = None,
-                 title: str = "Add Entry", store=None):
+                 title: str = "Add Entry", store=None, pl_map: Optional[dict] = None):
         super().__init__(parent)
         self.title(title)
         self.resizable(False, True)
@@ -179,13 +179,33 @@ class EntryFormDialog(ctk.CTkToplevel):
 
         self._lookups = _load_lookups()
         self._store = store
+        self._pl_map: dict = pl_map or {}   # Family -> Product Line 2
         self._result: Optional[dict] = None
         self._widgets: dict[str, tk.Widget] = {}
         self._vars: dict[str, tk.Variable] = {}
         self._fl = ctk.CTkFont(size=13)
         self._fh = ctk.CTkFont(size=17, weight="bold")
 
+        # PL auto-fill state
+        self._auto_filling   = False   # True while we programmatically set PL
+        self._pl_manually_set = False  # True once user types in PL field
+
         self._build_ui(existing_row)
+
+        # After all vars are set: decide if existing PL was manually overridden
+        if existing_row:
+            platform    = str(existing_row.get("Platform") or "").strip().lower()
+            existing_pl = str(existing_row.get("PL") or "").strip()
+            map_pl      = self._pl_map.get(platform, "")
+            if existing_pl and existing_pl != map_pl:
+                self._pl_manually_set = True
+
+        # Wire up traces AFTER initial values are loaded
+        if "Platform" in self._vars:
+            self._vars["Platform"].trace_add("write", self._on_platform_changed)
+        if "PL" in self._vars:
+            self._vars["PL"].trace_add("write", self._on_pl_changed)
+
         self._center(parent)
 
     # ------------------------------------------------------------------ UI ---
@@ -265,6 +285,26 @@ class EntryFormDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=13), fg_color="gray40", hover_color="gray30",
             command=self.destroy,
         ).grid(row=btn_row, column=1, pady=(18, 16), padx=14, sticky="w")
+
+    # ----------------------------------------------------- PL auto-mapping --
+    def _on_platform_changed(self, *_):
+        """Auto-fill PL from the PL map whenever Platform changes."""
+        if self._pl_manually_set:
+            return
+        platform = self._vars.get("Platform")
+        pl_var   = self._vars.get("PL")
+        if platform is None or pl_var is None:
+            return
+        auto_pl = self._pl_map.get(platform.get().strip().lower(), "")
+        self._auto_filling = True
+        pl_var.set(auto_pl)
+        self._auto_filling = False
+
+    def _on_pl_changed(self, *_):
+        """Mark PL as manually set if the user typed in the PL field."""
+        if self._auto_filling:
+            return
+        self._pl_manually_set = True
 
     # -------------------------------------------------------------- actions --
     def _on_save(self):

@@ -17,6 +17,7 @@ import customtkinter as ctk
 from app.data_store import DISPLAY_COLUMNS, ExcelDataStore
 from app.entry_form import EntryFormDialog
 from app.lookup_editor import LookupEditorDialog
+from app.pl_mapper import load_pl_map, refresh_pl_map
 from app.user_selector import UserSelectorDialog
 
 ctk.set_appearance_mode("dark")
@@ -42,6 +43,7 @@ COL_WIDTHS = {
     "Actual Payment": 140,
     "Status": 130,
     "Payment Received Date": 170,
+    "PL": 120,
     "Payment Received Quarter": 165,
     "Update Date": 175,
 }
@@ -70,6 +72,7 @@ class MainWindow:
         self._store: Optional[ExcelDataStore] = None
         self._filepath: Optional[str] = None
         self._current_user: Optional[str] = None
+        self._pl_map: dict[str, str] = load_pl_map()  # Family -> Product Line 2
         self._sort_col: str = "Update Date"  # default: newest first
         self._sort_asc: bool = False
         self._filter_var = tk.StringVar()
@@ -100,6 +103,12 @@ class MainWindow:
                       command=self._open_lookup_editor).pack(side="right", padx=4)
         ctk.CTkButton(top, text="Open Excel", width=100, height=32,
                       font=ctk.CTkFont(size=12), command=self._browse_file).pack(side="right", padx=4)
+        self._refresh_pl_btn = ctk.CTkButton(
+            top, text="Refresh PL", width=110, height=32,
+            font=ctk.CTkFont(size=12), fg_color="#2a6040", hover_color="#1e4a2e",
+            command=self._refresh_pl,
+        )
+        self._refresh_pl_btn.pack(side="right", padx=4)
 
         # Left: title + user badge + file name
         ctk.CTkLabel(top, text="EO Table Management",
@@ -449,7 +458,8 @@ class MainWindow:
         if self._store is None:
             messagebox.showwarning("No file", "Please open an Excel file first.")
             return
-        dlg = EntryFormDialog(self._root, title="Add Entry", store=self._store)
+        dlg = EntryFormDialog(self._root, title="Add Entry", store=self._store,
+                              pl_map=self._pl_map)
         self._root.wait_window(dlg)
         result = dlg.get_result()
         if result:
@@ -472,7 +482,8 @@ class MainWindow:
         except ValueError:
             store_idx = None
 
-        dlg = EntryFormDialog(self._root, existing_row=existing, title="Edit Entry", store=self._store)
+        dlg = EntryFormDialog(self._root, existing_row=existing, title="Edit Entry",
+                              store=self._store, pl_map=self._pl_map)
         self._root.wait_window(dlg)
         result = dlg.get_result()
         if result is not None and store_idx is not None:
@@ -483,6 +494,41 @@ class MainWindow:
     def _open_lookup_editor(self):
         dlg = LookupEditorDialog(self._root)
         self._root.wait_window(dlg)
+
+    # ---------------------------------------------------------- PL refresh ---
+    def _refresh_pl(self):
+        """Run PL map refresh in a background thread to keep UI responsive."""
+        import threading
+        self._refresh_pl_btn.configure(state="disabled", text="Refreshing…")
+        self._status_var.set("Refreshing PL map…")
+
+        def _run():
+            try:
+                n = refresh_pl_map()
+                self._root.after(0, lambda: self._on_pl_refresh_done(n, None))
+            except Exception as exc:
+                err = str(exc)
+                self._root.after(0, lambda: self._on_pl_refresh_done(None, err))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_pl_refresh_done(self, count, error):
+        self._refresh_pl_btn.configure(state="normal", text="Refresh PL")
+        if error:
+            self._status_var.set("Refresh PL failed.")
+            self._root.lift()
+            self._root.focus_force()
+            messagebox.showerror("Refresh PL Failed", error, parent=self._root)
+        else:
+            self._pl_map = load_pl_map()
+            self._status_var.set(f"PL map refreshed — {count} unique entries.")
+            self._root.lift()
+            self._root.focus_force()
+            messagebox.showinfo(
+                "Refresh PL Complete",
+                f"PL map refreshed successfully.\n{count} unique Platform → PL entries.",
+                parent=self._root,
+            )
 
     def _select_user_at_startup(self):
         """Show user selector and load the user's saved Excel path."""

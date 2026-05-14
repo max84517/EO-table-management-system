@@ -25,8 +25,13 @@ ctk.set_default_color_theme("blue")
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 
 # Status indicator colours
-COLOR_RED = "#e84646"
-COLOR_GREEN = "#3dbb6e"
+COLOR_RED    = "#e84646"   # Confirming Numbers
+COLOR_YELLOW = "#d4a017"   # Contract & DM process
+COLOR_GREEN  = "#3dbb6e"   # Finish
+
+_STATUS_GREEN  = {"Finish"}
+_STATUS_YELLOW = {"wait for contract approval", "wait for contract sign", "wait for DM"}
+_STATUS_RED    = {"1st version complete", "2nd version complete"}
 
 # Column widths for treeview
 COL_WIDTHS = {
@@ -69,6 +74,12 @@ class MainWindow:
         self._sort_asc: bool = False
         self._filter_var = tk.StringVar()
         self._filter_var.trace_add("write", lambda *_: self._refresh_table())
+        self._seg_btn: Optional[ctk.CTkButton] = None
+        # Column-level filters: col -> set of allowed values (missing key = no filter)
+        self._col_filters: dict[str, set] = {}
+
+        self._segment_active: set = set()  # kept for compat
+        self._all_segments: list = []
 
         self._build_ui()
         # Set initial sort arrow
@@ -105,13 +116,20 @@ class MainWindow:
         filter_bar.pack(side="top", fill="x")
         filter_bar.pack_propagate(False)
         ctk.CTkLabel(filter_bar, text="Search:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(14, 4))
-        ctk.CTkEntry(filter_bar, textvariable=self._filter_var, width=300, height=32,
+        ctk.CTkEntry(filter_bar, textvariable=self._filter_var, width=320, height=32,
                      font=ctk.CTkFont(size=13),
-                     placeholder_text="Filter any column...").pack(side="left", padx=4)
+                     placeholder_text="Filter any column...").pack(side="left", padx=(4, 10))
 
-        ctk.CTkLabel(filter_bar,
-                     text="  ● Red = Tracking (no payment)    ● Green = Complete",
-                     font=ctk.CTkFont(size=12), text_color="gray60").pack(side="right", padx=14)
+        ctk.CTkLabel(filter_bar, text="Right-click column header to filter",
+                     font=ctk.CTkFont(size=11), text_color="gray50").pack(side="left", padx=(0, 4))
+
+        # Coloured legend — packed right-to-left so green is on the far right
+        ctk.CTkLabel(filter_bar, text="● Complete",
+                     font=ctk.CTkFont(size=12), text_color="#3dbb6e").pack(side="right", padx=(0, 14))
+        ctk.CTkLabel(filter_bar, text="  |",
+                     font=ctk.CTkFont(size=12), text_color="gray50").pack(side="right")
+        ctk.CTkLabel(filter_bar, text="● Tracking  ",
+                     font=ctk.CTkFont(size=12), text_color="#e84646").pack(side="right")
 
         # ---- Table area ----
         table_frame = tk.Frame(self._root, bg="#1e1e1e")
@@ -160,14 +178,18 @@ class MainWindow:
         self._col_header_base = {c: c for c in cols}  # track base label for sort arrows
 
         # Row tags for status indicator colours
-        self._tree.tag_configure("red_dot", foreground=COLOR_RED)
-        self._tree.tag_configure("green_dot", foreground=COLOR_GREEN)
-        self._tree.tag_configure("stripe", background="#313131")
-        self._tree.tag_configure("stripe_red", background="#313131", foreground=COLOR_RED)
-        self._tree.tag_configure("stripe_green", background="#313131", foreground=COLOR_GREEN)
+        self._tree.tag_configure("red_dot",     foreground=COLOR_RED)
+        self._tree.tag_configure("yellow_dot",  foreground=COLOR_YELLOW)
+        self._tree.tag_configure("green_dot",   foreground=COLOR_GREEN)
+        self._tree.tag_configure("stripe",      background="#313131")
+        self._tree.tag_configure("stripe_red",    background="#313131", foreground=COLOR_RED)
+        self._tree.tag_configure("stripe_yellow", background="#313131", foreground=COLOR_YELLOW)
+        self._tree.tag_configure("stripe_green",  background="#313131", foreground=COLOR_GREEN)
 
         # Double-click to edit
         self._tree.bind("<Double-1>", self._on_double_click)
+        # Right-click on heading → column filter popup
+        self._tree.bind("<Button-3>", self._on_header_right_click)
 
         # ---- Status bar ----
         self._status_var = tk.StringVar(value="Ready")
@@ -201,12 +223,156 @@ class MainWindow:
         except Exception as exc:
             messagebox.showerror("Error", f"Failed to load file:\n{exc}")
 
+    def _on_header_right_click(self, event):
+        """Open a checkbox filter popup when right-clicking a column heading."""
+        region = self._tree.identify_region(event.x, event.y)
+        if region != "heading":
+            return
+        col_id = self._tree.identify_column(event.x)
+        col_idx = int(col_id.lstrip("#")) - 1
+        cols = ["●"] + DISPLAY_COLUMNS
+        if col_idx < 0 or col_idx >= len(cols):
+            return
+        col = cols[col_idx]
+        if col == "●":
+            return
+        self._open_col_filter(col, event.x_root, event.y_root)
+
+    def _open_col_filter(self, col: str, x: int, y: int):
+        """Show a multi-select checkbox filter for the given column."""
+        if self._store is None:
+            return
+        all_values = sorted(
+            {str(row.get(col) or "").strip() for row in self._store.get_rows()},
+            key=lambda v: ("ÿ" if v == "" else v.lower()),
+        )
+        if not all_values:
+            return
+
+        current = self._col_filters.get(col, set())
+        popup = ctk.CTkToplevel(self._root)
+        popup.title("")
+        popup.overrideredirect(True)
+        popup.configure(fg_color="#2b2b2b")
+        # Do NOT grab_set — we need outside clicks to register for auto-close
+
+        ctk.CTkLabel(popup, text=f"Filter: {col.replace(chr(10), ' ')}",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(padx=14, pady=(10, 4))
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+
+        temp_vars: dict[str, tk.BooleanVar] = {}
+        for v in all_values:
+            temp_vars[v] = tk.BooleanVar(value=(not current) or (v in current))
+
+        all_var = tk.BooleanVar(value=not current)
+
+        def _on_all():
+            on = all_var.get()
+            for bv in temp_vars.values():
+                bv.set(on)
+
+        def _on_item():
+            all_var.set(all(bv.get() for bv in temp_vars.values()))
+
+        ctk.CTkCheckBox(popup, text="(Select All)", variable=all_var,
+                        font=ctk.CTkFont(size=12, weight="bold"),
+                        command=_on_all).pack(anchor="w", padx=14, pady=3)
+
+        scroll_h = min(len(all_values) * 30 + 10, 260)
+        scroll = ctk.CTkScrollableFrame(popup, fg_color="transparent",
+                                        width=230, height=scroll_h)
+        scroll.pack(padx=6, pady=2)
+        for v in all_values:
+            ctk.CTkCheckBox(scroll, text=(v if v else "(blank)"),
+                            variable=temp_vars[v], font=ctk.CTkFont(size=12),
+                            command=_on_item).pack(anchor="w", pady=2)
+
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=(4, 10))
+
+        def _apply():
+            chosen = {v for v, bv in temp_vars.items() if bv.get()}
+            if len(chosen) == len(all_values):
+                self._col_filters.pop(col, None)
+            else:
+                self._col_filters[col] = chosen
+            self._update_heading_text(col)
+            self._refresh_table()
+            popup.destroy()
+
+        def _clear():
+            self._col_filters.pop(col, None)
+            self._update_heading_text(col)
+            self._refresh_table()
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text="Apply", width=90, height=30,
+                      font=ctk.CTkFont(size=12), command=_apply).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Clear", width=80, height=30,
+                      font=ctk.CTkFont(size=12), fg_color="gray40", hover_color="gray30",
+                      command=_clear).pack(side="left")
+
+        popup.update_idletasks()
+        popup.geometry(f"+{x}+{y}")
+
+        def _close_if_outside(event):
+            if not popup.winfo_exists():
+                return
+            px, py = popup.winfo_rootx(), popup.winfo_rooty()
+            pw, ph = popup.winfo_width(), popup.winfo_height()
+            if not (px <= event.x_root <= px + pw and py <= event.y_root <= py + ph):
+                popup.destroy()
+
+        # bind_all fires for every widget click in the whole app
+        popup.bind_all("<Button-1>", _close_if_outside, add="+")
+        popup.bind("<Destroy>", lambda e: popup.unbind_all("<Button-1>"))
+
+    def _update_heading_text(self, col: str):
+        """Rebuild heading label with sort arrow and/or filter indicator."""
+        if not hasattr(self, "_col_header_base"):
+            return
+        base = self._col_header_base.get(col, col)
+        text = base
+        if self._sort_col == col:
+            text += " ▲" if self._sort_asc else " ▼"
+        if col in self._col_filters:
+            text += " ◆"
+        self._tree.heading(col, text=text)
+
+    def _rebuild_segment_bar(self):
+        pass  # removed — replaced by per-column filter
+
+    def _update_seg_btn_label(self):
+        pass
+
+    def _open_segment_dropdown(self):
+        pass
+
+    def _toggle_all_segments(self):
+        pass
+
+    def _toggle_segment(self, seg):
+        pass
+
+    def _update_segment_button_styles(self):
+        pass
+
+    def _save_segment_prefs(self):
+        pass
+
     def _refresh_table(self):
         if self._store is None:
             return
         rows = self._store.get_rows()
 
-        # Apply filter
+        # Apply column-level filters
+        for _col, _allowed in self._col_filters.items():
+            if _allowed:
+                rows = [r for r in rows
+                        if str(r.get(_col) or "").strip() in _allowed]
+
+        # Apply text filter
         flt = self._filter_var.get().lower().strip()
         if flt:
             rows = [r for r in rows if any(flt in str(v).lower() for v in r.values())]
@@ -231,17 +397,19 @@ class MainWindow:
     def _populate_tree(self, rows: list[dict]):
         self._tree.delete(*self._tree.get_children())
         for i, row in enumerate(rows):
-            prd = row.get("Payment Received Date")
-            has_payment = bool(prd)
-            dot = "●"
             stripe = (i % 2 == 1)
 
-            values = [dot] + [self._fmt(row.get(c)) for c in DISPLAY_COLUMNS]
+            values = ["●"] + [self._fmt_col(c, row.get(c)) for c in DISPLAY_COLUMNS]
 
-            if has_payment:
+            status = str(row.get("Status") or "").strip()
+            if status in _STATUS_GREEN:
                 tag = "stripe_green" if stripe else "green_dot"
-            else:
+            elif status in _STATUS_YELLOW:
+                tag = "stripe_yellow" if stripe else "yellow_dot"
+            elif status in _STATUS_RED:
                 tag = "stripe_red" if stripe else "red_dot"
+            else:
+                tag = "stripe" if stripe else ""
 
             # Store original index in iid
             self._tree.insert("", "end", iid=str(id(row)) + str(i),
@@ -255,28 +423,33 @@ class MainWindow:
             return ""
         return str(val)
 
+    def _fmt_col(self, col: str, val) -> str:
+        if val is None or val == "":
+            return ""
+        if col == "Actual Payment":
+            try:
+                return f"${float(val):,.1f}"
+            except (ValueError, TypeError):
+                return str(val)
+        return str(val)
+
     def _sort_by(self, col: str):
         if self._sort_col == col:
             self._sort_asc = not self._sort_asc
         else:
-            # Clear previous sort arrow
-            if self._sort_col and hasattr(self, "_col_header_base"):
-                base = self._col_header_base.get(self._sort_col, self._sort_col)
-                self._tree.heading(self._sort_col, text=base)
+            prev = self._sort_col
             self._sort_col = col
             self._sort_asc = True
-        # Update heading with sort arrow
-        if hasattr(self, "_col_header_base"):
-            base = self._col_header_base.get(col, col)
-            arrow = " ▲" if self._sort_asc else " ▼"
-            self._tree.heading(col, text=base + arrow)
+            if prev and hasattr(self, "_col_header_base"):
+                self._update_heading_text(prev)
+        self._update_heading_text(col)
         self._refresh_table()
 
     def _add_entry(self):
         if self._store is None:
             messagebox.showwarning("No file", "Please open an Excel file first.")
             return
-        dlg = EntryFormDialog(self._root, title="Add Entry")
+        dlg = EntryFormDialog(self._root, title="Add Entry", store=self._store)
         self._root.wait_window(dlg)
         result = dlg.get_result()
         if result:
@@ -299,7 +472,7 @@ class MainWindow:
         except ValueError:
             store_idx = None
 
-        dlg = EntryFormDialog(self._root, existing_row=existing, title="Edit Entry")
+        dlg = EntryFormDialog(self._root, existing_row=existing, title="Edit Entry", store=self._store)
         self._root.wait_window(dlg)
         result = dlg.get_result()
         if result is not None and store_idx is not None:
@@ -338,8 +511,9 @@ class MainWindow:
         user_paths = cfg.get("user_paths", {})
         path = user_paths.get(selected, "")
         if path and os.path.exists(path):
-            self._load_file(path)
+            self._load_file(path)  # _load_file calls _rebuild_segment_bar
         else:
+            self._rebuild_segment_bar()
             self._status_var.set(f"Welcome, {selected}! Open an Excel file to get started.")
 
     def _on_close(self):

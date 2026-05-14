@@ -74,20 +74,38 @@ def _quarter_label(d: date) -> str:
 
 
 def compute_derived(row: dict) -> dict:
-    """Fill in Actual Payment, Saving, Payment Received Quarter from raw fields."""
+    """Fill in Actual Payment, Saving, Payment Received Quarter from raw fields.
+    Rebate Initiative % is stored as a display value (e.g. 10 means 10%).
+    """
     try:
         gtk_liability = float(row.get("Actual GTK \nLiability $") or 0)
-        rebate_pct = float(row.get("Rebate Initiative %") or 0)
-        actual_payment = gtk_liability * (1 - rebate_pct / 100.0)
-        row["Actual Payment"] = round(actual_payment, 2)
+        rebate_raw = row.get("Rebate Initiative %")
+        if rebate_raw is None or rebate_raw == "":
+            rebate_pct = 0.0
+        else:
+            val = float(rebate_raw)
+            # Accept both 0.10 (already decimal) and 10 (percent)
+            rebate_pct = val if val <= 1.0 else val / 100.0
+        actual_payment = gtk_liability * (1 - rebate_pct)
+        row["Actual Payment"] = round(actual_payment, 1)
     except (ValueError, TypeError):
         row["Actual Payment"] = None
 
     try:
         gtk_orig = float(row.get("GTK \nLiability $") or 0)
-        row["Saving"] = round(gtk_orig - (row["Actual Payment"] or 0), 2)
+        row["Saving"] = round(gtk_orig - (row["Actual Payment"] or 0), 1)
     except (ValueError, TypeError):
         row["Saving"] = None
+
+    # ESR need: auto-calculate based on Actual Payment threshold
+    actual = row.get("Actual Payment")
+    if actual is None:
+        row["ESR need (Y/N)"] = ""
+    else:
+        try:
+            row["ESR need (Y/N)"] = "Y" if float(actual) > 500000 else "N"
+        except (ValueError, TypeError):
+            row["ESR need (Y/N)"] = ""
 
     prd = row.get("Payment Received Date")
     if prd:
@@ -169,6 +187,17 @@ class ExcelDataStore:
         ws = wb.create_sheet(SHEET_NAME)
         ws.append(ALL_COLUMNS)
         for row in self._rows:
-            ws.append([row.get(c) for c in ALL_COLUMNS])
+            out = []
+            for c in ALL_COLUMNS:
+                v = row.get(c)
+                if c == "Rebate Initiative %" and v is not None and v != "":
+                    try:
+                        fv = float(v)
+                        # Normalise to decimal fraction for Excel
+                        v = fv / 100.0 if fv > 1.0 else fv
+                    except (ValueError, TypeError):
+                        pass
+                out.append(v)
+            ws.append(out)
 
         wb.save(self.filepath)

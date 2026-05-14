@@ -35,7 +35,6 @@ FORM_FIELDS = [
     "Sub-Category",
     "GTK \nLiability $",
     "Actual GTK \nLiability $",
-    "ESR need (Y/N)",
     "Status",
     "DM #",
     "PL",
@@ -171,13 +170,15 @@ class DarkDatePicker(ctk.CTkFrame):
 class EntryFormDialog(ctk.CTkToplevel):
     """Modal dialog for adding or editing a row."""
 
-    def __init__(self, parent, existing_row: Optional[dict] = None, title: str = "Add Entry"):
+    def __init__(self, parent, existing_row: Optional[dict] = None,
+                 title: str = "Add Entry", store=None):
         super().__init__(parent)
         self.title(title)
         self.resizable(False, True)
         self.grab_set()
 
         self._lookups = _load_lookups()
+        self._store = store
         self._result: Optional[dict] = None
         self._widgets: dict[str, tk.Widget] = {}
         self._vars: dict[str, tk.Variable] = {}
@@ -228,20 +229,31 @@ class EntryFormDialog(ctk.CTkToplevel):
                 self._widgets[field] = entry
 
             else:
-                options_sorted = sorted(self._lookups.get(field, []))
+                if field == "Sub-Category" and self._store:
+                    # Dynamic: unique values from Excel data
+                    live = {
+                        str(r.get("Sub-Category") or "").strip()
+                        for r in self._store.get_rows()
+                    }
+                    seed = set(self._lookups.get(field, []))
+                    options_sorted = sorted((live | seed) - {""})
+                else:
+                    options_sorted = sorted(self._lookups.get(field, []))
                 var = tk.StringVar()
                 if existing_row and existing_row.get(field) is not None:
                     var.set(str(existing_row[field]))
                 elif options_sorted:
                     var.set(options_sorted[0])
-                combo = ctk.CTkComboBox(
+                # CTkOptionMenu: dropdown width always matches button width (no mismatch)
+                opt = ctk.CTkOptionMenu(
                     self, variable=var, values=options_sorted,
-                    width=INPUT_WIDTH, height=34, font=self._fl, state="readonly",
+                    width=INPUT_WIDTH, height=34,
+                    font=self._fl,
                     dropdown_font=ctk.CTkFont(size=13),
                 )
-                combo.grid(row=row_num, column=1, sticky="w", **pad)
+                opt.grid(row=row_num, column=1, sticky="w", **pad)
                 self._vars[field] = var
-                self._widgets[field] = combo
+                self._widgets[field] = opt
 
         btn_row = len(FORM_FIELDS) + 1
         ctk.CTkButton(

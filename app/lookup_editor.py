@@ -7,13 +7,15 @@ from __future__ import annotations
 import json
 import os
 import tkinter as tk
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
+from openpyxl import load_workbook
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOOKUPS_PATH = os.path.join(ROOT_DIR, "lookups.json")
 
-LOOKUP_KEYS = ["Platform", "ODM", "GBU", "GTK Supplier", "Sub-Category", "ESR need (Y/N)", "Status"]
+LOOKUP_KEYS = ["ODM", "GBU", "GTK Supplier", "Sub-Category", "ESR need (Y/N)", "Status"]
 
 
 def _load_lookups() -> dict:
@@ -70,9 +72,12 @@ class LookupEditorDialog(ctk.CTkToplevel):
 
         add_frame = ctk.CTkFrame(right, fg_color="transparent")
         add_frame.pack(fill="x", padx=8, pady=(6, 0))
-        self._new_entry = ctk.CTkEntry(add_frame, placeholder_text="New option...", width=260)
+        self._new_entry = ctk.CTkEntry(add_frame, placeholder_text="New option...", width=220)
         self._new_entry.pack(side="left", expand=True, fill="x", padx=(0, 6))
-        ctk.CTkButton(add_frame, text="Add", width=80, command=self._add_item).pack(side="left")
+        ctk.CTkButton(add_frame, text="Add", width=70, command=self._add_item).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(add_frame, text="Import Excel", width=105,
+                      fg_color="gray35", hover_color="gray25",
+                      command=self._import_excel).pack(side="left")
 
         btn_row = ctk.CTkFrame(right, fg_color="transparent")
         btn_row.pack(fill="x", padx=8, pady=6)
@@ -106,6 +111,47 @@ class LookupEditorDialog(ctk.CTkToplevel):
         if item in self._data.get(key, []):
             self._data[key].remove(item)
         self._refresh_list()
+
+    def _import_excel(self):
+        """Bulk-import options from the first column (no header) of an Excel file."""
+        path = filedialog.askopenfilename(
+            title="Select Excel file to import",
+            filetypes=[("Excel files", "*.xlsx *.xlsm *.xls"), ("All files", "*.*")],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            wb = load_workbook(path, data_only=True, read_only=True)
+            ws = wb.active
+            new_values = []
+            for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
+                cell = row[0]
+                if cell is not None and str(cell).strip():
+                    new_values.append(str(cell).strip())
+            wb.close()
+        except Exception as exc:
+            messagebox.showerror("Import Error", f"Could not read file:\n{exc}", parent=self)
+            return
+
+        if not new_values:
+            messagebox.showinfo("Import", "No values found in the first column.", parent=self)
+            return
+
+        key = self._selected_key.get()
+        existing = set(self._data.get(key, []))
+        added = 0
+        for v in new_values:
+            if v not in existing:
+                existing.add(v)
+                added += 1
+        self._data[key] = sorted(existing)
+        self._refresh_list()
+        messagebox.showinfo(
+            "Import Complete",
+            f"Added {added} new option(s). Duplicates were skipped.",
+            parent=self,
+        )
 
     def _save_close(self):
         _save_lookups(self._data)

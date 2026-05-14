@@ -6,20 +6,26 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 
 - **Per-user login** — select or create a user at startup; each user's Excel file path is remembered separately
 - **Dark-mode UI** — built with CustomTkinter
-- **Interactive data table** — view key columns with click-to-sort (ascending/descending) on any column including the status indicator
-- **Status indicators** — 🔴 Red = Tracking (no Payment Received Date), 🟢 Green = Complete
+- **Interactive data table** — view key columns with click-to-sort (ascending/descending) on any column
+- **Status indicators** (based on `Status` field):
+  - 🔴 Red — **Confirming Numbers** (`1st version complete`, `2nd version complete`)
+  - 🟡 Yellow — **Contract & DM process** (`wait for contract approval`, `wait for contract sign`, `wait for DM`)
+  - 🟢 Green — **Finish**
 - **Default sort** — newest entries (by Update Date) shown first
-- **Search / filter** — real-time filter across all columns
+- **Search / filter** — real-time text filter across all visible columns
+- **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; click anywhere outside to dismiss
 - **Add & edit entries** — form dialog with:
   - Free-text fields for Platform, GTK Liability, DM #, PL, Rebate %
-  - Dropdown selectors (A-Z sorted) for ODM, GBU, GTK Supplier, Sub-Category, ESR, Status
-  - Dark-mode calendar date picker for Payment Received Date
+  - Dropdown selectors (A-Z sorted) for ODM, GBU, GTK Supplier, Sub-Category, Status
+  - Sub-Category list is dynamically populated from existing Excel data
+  - Dark-mode calendar date picker for Payment Received Date (blank by default, clearable with ✕)
 - **Auto-calculated fields**:
-  - `Actual Payment = Actual GTK Liability × (1 − Rebate %)`
-  - `Saving = GTK Liability − Actual Payment`
+  - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — rounded to 1 decimal
+  - `Saving = GTK Liability − Actual Payment` — rounded to 1 decimal
+  - `ESR need (Y/N)` — auto-set: `Y` if Actual Payment > 500,000, else `N`
   - `Payment Received Quarter` — HP fiscal quarter (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)
   - `Update Date` — auto-set to current timestamp on every save
-- **Manage Options** — add or remove dropdown choices stored in `lookups.json`
+- **Manage Options** — add/remove dropdown choices stored in `lookups.json`; bulk import from Excel supported
 - **Writes back to Excel** — updates the `Data` sheet in the source workbook
 
 ## Fiscal Quarter Logic
@@ -81,13 +87,13 @@ Required columns (exact header text):
 | Column | Input type |
 |--------|-----------|
 | Platform | Free text |
-| ODM | Dropdown |
-| GBU | Dropdown |
-| GTK Supplier | Dropdown |
-| Sub-Category | Dropdown |
+| ODM | Dropdown (`Foxconn`, `Inventec`, `Pegatron`, `Quanta`, `Wistron`) |
+| GBU | Dropdown (`bDT`, `bNB`, `cDT`, `cNB`) |
+| GTK Supplier | Dropdown (29 suppliers) |
+| Sub-Category | Dropdown (dynamic from data + lookups.json) |
 | GTK \nLiability $ | Free text (number) |
 | Actual GTK \nLiability $ | Free text (number) |
-| ESR need (Y/N) | Dropdown |
+| ESR need (Y/N) | **Auto-calculated** (Y if Actual Payment > 500,000) |
 | Status | Dropdown |
 | DM # | Free text |
 | PL | Free text |
@@ -117,9 +123,12 @@ Required columns (exact header text):
 
 ```json
 {
-  "Platform": ["Astro", "Blade", ...],
-  "ODM": ["Chicony", ...],
-  ...
+  "ODM": ["Foxconn", "Inventec", "Pegatron", "Quanta", "Wistron"],
+  "GBU": ["bDT", "bNB", "cDT", "cNB"],
+  "GTK Supplier": ["AVC", "Auras", "BYS", "..."],
+  "Sub-Category": [],
+  "ESR need (Y/N)": ["Y", "N"],
+  "Status": ["1st version complete", "2nd version complete", "Finish", "..."]
 }
 ```
 

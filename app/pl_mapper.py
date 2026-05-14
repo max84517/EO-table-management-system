@@ -56,11 +56,6 @@ def _process_family(raw: str) -> list[str]:
     # Step 1: strip FYXXQX
     cleaned = _FY_PAT.sub("", raw).strip()
 
-    # Step 1b: strip "-" and everything after it
-    dash_idx = cleaned.find("-")
-    if dash_idx != -1:
-        cleaned = cleaned[:dash_idx].strip()
-
     # Step 2: split on "/"
     parts = [p.strip() for p in cleaned.split("/")]
 

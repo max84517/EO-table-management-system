@@ -170,8 +170,26 @@ class ExcelDataStore:
     def update_row(self, index: int, row: dict):
         row = compute_derived(row)
         row["Update Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self._rows[index] = row
+        self._rows.pop(index)   # remove from original position
+        self._rows.append(row)  # re-insert at the bottom
         self._save()
+
+    def delete_row(self, index: int):
+        self._rows.pop(index)
+        self._save()
+
+    def bulk_append_rows(self, rows: list[dict]) -> int:
+        """Compute derived fields for each row and append all at once (single save)."""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        count = 0
+        for row in rows:
+            row = compute_derived(row)
+            row["Update Date"] = now
+            self._rows.append(row)
+            count += 1
+        if count:
+            self._save()
+        return count
 
     def _save(self):
         if os.path.exists(self.filepath):

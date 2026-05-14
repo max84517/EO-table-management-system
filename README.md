@@ -8,23 +8,30 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 - **Dark-mode UI** — built with CustomTkinter
 - **Interactive data table** — view key columns with click-to-sort (ascending/descending) on any column
 - **Status indicators** (based on `Status` field):
-  - 🔴 Red — **Confirming Numbers** (`1st version complete`, `2nd version complete`)
-  - 🟡 Yellow — **Contract & DM process** (`wait for contract approval`, `wait for contract sign`, `wait for DM`)
+  - 🔴 Red — **Confirming Numbers** (`1st Ver Complete`, `2nd Ver Complete`)
+  - 🟡 Yellow — **Contract & DM process** (`Wait for Contract Approval`, `Wait for Contract Sign`, `Wait for DM`)
   - 🟢 Green — **Finish**
+  - 🔵 Blue — **Halt**
 - **Default sort** — newest entries (by Update Date) shown first
 - **Search / filter** — real-time text filter across all visible columns
 - **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; click anywhere outside to dismiss
 - **Add & edit entries** — form dialog with:
   - Free-text fields for Platform, GTK Liability, DM #, PL, Rebate %
-  - Dropdown selectors (A-Z sorted) for ODM, GBU, GTK Supplier, Sub-Category, Status
-  - Sub-Category list is dynamically populated from existing Excel data
-  - Dark-mode calendar date picker for Payment Received Date (blank by default, clearable with ✕)
+  - Dropdown selectors (A-Z sorted) for ODM, GBU, Sub-Category, Status
+  - **GTK Supplier** uses a scrollable listbox dropdown (mouse-wheel supported) for easy navigation of long lists
+  - Dark-mode calendar date picker for Payment Received Date (blank by default, clearable with ✕; enabled only when Status = Finish)
+  - Platform → PL auto-mapping (case-insensitive lookup from PL map; manual override supported)
+- **ESR warning** — cells where Actual Payment > 500,000 show a ⚠ icon; hover to see "ESR Needed" tooltip
 - **Auto-calculated fields**:
   - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — rounded to 1 decimal
   - `Saving = GTK Liability − Actual Payment` — rounded to 1 decimal
   - `ESR need (Y/N)` — auto-set: `Y` if Actual Payment > 500,000, else `N`
   - `Payment Received Quarter` — HP fiscal quarter (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)
   - `Update Date` — auto-set to current timestamp on every save
+- **Connect Data** — connect to the target Excel workbook (stores path per user)
+- **Import Excel** — bulk-import rows from a separate Excel file; all derived fields are auto-calculated on import
+  - Template available at `data/excel template/EO_Import_Template.xlsx`
+- **PL Mapper** — reads `.xlsb`/`.xlsx` source files from `data/PL Source/`, generates `data/PL output/PL map.xlsx`; **Refresh PL** button re-runs in background
 - **Manage Options** — add/remove dropdown choices stored in `lookups.json`; bulk import from Excel supported
 - **Writes back to Excel** — updates the `Data` sheet in the source workbook
 
@@ -48,11 +55,16 @@ EO-table-management-system/
 ├── poetry.toml              # in-project .venv setting
 ├── lookups.json             # Dropdown option lists (editable via UI)
 ├── config.json              # Auto-generated: user list + per-user Excel paths
+├── data/
+│   ├── PL Source/           # Source .xlsb/.xlsx files for PL mapper
+│   ├── PL output/           # Generated PL map.xlsx
+│   └── excel template/      # EO_Import_Template.xlsx (bulk import template)
 └── app/
     ├── __init__.py
     ├── data_store.py        # Excel read/write + derived field calculations
     ├── main_window.py       # Main window (table view, top bar, filter)
     ├── entry_form.py        # Add / Edit entry dialog
+    ├── pl_mapper.py         # PL mapper (reads xlsb/xlsx, generates PL map)
     ├── user_selector.py     # Startup user selection dialog
     └── lookup_editor.py     # Manage dropdown options dialog
 ```
@@ -139,3 +151,26 @@ Required columns (exact header text):
 | customtkinter | ≥5.2.2 | Dark-mode UI widgets |
 | openpyxl | ≥3.1.5 | Excel read/write |
 | tkcalendar | ≥1.6.1 | Calendar date picker |
+| pyxlsb | ^1.0.10 | Read binary Excel (.xlsb) for PL mapper |
+
+## Import Excel Template
+
+A ready-to-use template is included at `data/excel template/EO_Import_Template.xlsx`.
+
+Fill in the columns below and click **Import Excel** in the app to bulk-import rows.  
+Derived fields (`Actual Payment`, `Saving`, `ESR need`, `Payment Received Quarter`, `Update Date`) are calculated automatically during import.
+
+| Column | Notes |
+|--------|-------|
+| Platform | Free text |
+| ODM | e.g. Foxconn, Inventec … |
+| GBU | bDT / bNB / cDT / cNB |
+| GTK Supplier | From lookup list |
+| Sub-Category | Keyboard / Metal / … |
+| GTK Liability $ | Number |
+| Actual GTK Liability $ | Number |
+| Status | From lookup list |
+| DM # | Free text |
+| PL | Free text |
+| Rebate Initiative % | Integer, e.g. `10` for 10% |
+| Payment Received Date | YYYY-MM-DD |

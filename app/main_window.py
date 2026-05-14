@@ -29,10 +29,12 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 COLOR_RED    = "#e84646"   # Confirming Numbers
 COLOR_YELLOW = "#d4a017"   # Contract & DM process
 COLOR_GREEN  = "#3dbb6e"   # Finish
+COLOR_BLUE   = "#5bc8e8"   # Halt
 
 _STATUS_GREEN  = {"Finish"}
-_STATUS_YELLOW = {"wait for contract approval", "wait for contract sign", "wait for DM"}
-_STATUS_RED    = {"1st version complete", "2nd version complete"}
+_STATUS_YELLOW = {"Wait for Contract Approval", "Wait for Contract Sign", "Wait for DM"}
+_STATUS_RED    = {"1st Ver Complete", "2nd Ver Complete"}
+_STATUS_BLUE   = {"Halt"}
 
 # Column widths for treeview
 COL_WIDTHS = {
@@ -101,7 +103,10 @@ class MainWindow:
         ctk.CTkButton(top, text="Manage Options", width=128, height=32,
                       font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
                       command=self._open_lookup_editor).pack(side="right", padx=4)
-        ctk.CTkButton(top, text="Open Excel", width=100, height=32,
+        ctk.CTkButton(top, text="Import Excel", width=110, height=32,
+                      font=ctk.CTkFont(size=12), fg_color="#4a4a8a", hover_color="#35356e",
+                      command=self._import_excel).pack(side="right", padx=4)
+        ctk.CTkButton(top, text="Connect Data", width=110, height=32,
                       font=ctk.CTkFont(size=12), command=self._browse_file).pack(side="right", padx=4)
         self._refresh_pl_btn = ctk.CTkButton(
             top, text="Refresh PL", width=110, height=32,
@@ -190,15 +195,21 @@ class MainWindow:
         self._tree.tag_configure("red_dot",     foreground=COLOR_RED)
         self._tree.tag_configure("yellow_dot",  foreground=COLOR_YELLOW)
         self._tree.tag_configure("green_dot",   foreground=COLOR_GREEN)
+        self._tree.tag_configure("blue_dot",    foreground=COLOR_BLUE)
         self._tree.tag_configure("stripe",      background="#313131")
         self._tree.tag_configure("stripe_red",    background="#313131", foreground=COLOR_RED)
         self._tree.tag_configure("stripe_yellow", background="#313131", foreground=COLOR_YELLOW)
         self._tree.tag_configure("stripe_green",  background="#313131", foreground=COLOR_GREEN)
+        self._tree.tag_configure("stripe_blue",   background="#313131", foreground=COLOR_BLUE)
 
         # Double-click to edit
         self._tree.bind("<Double-1>", self._on_double_click)
         # Right-click on heading → column filter popup
         self._tree.bind("<Button-3>", self._on_header_right_click)
+        # Tooltip for ⚠ ESR cells
+        self._tip_win: Optional[tk.Toplevel] = None
+        self._tree.bind("<Motion>", self._on_tree_motion)
+        self._tree.bind("<Leave>", self._hide_tip)
 
         # ---- Status bar ----
         self._status_var = tk.StringVar(value="Ready")
@@ -214,6 +225,81 @@ class MainWindow:
         )
         if path:
             self._load_file(path)
+
+    # ---- column name normaliser for import ----
+    _IMPORT_COL_MAP: dict[str, str] = {
+        "platform":                    "Platform",
+        "odm":                         "ODM",
+        "gbu":                         "GBU",
+        "gtk supplier":                "GTK Supplier",
+        "sub-category":                "Sub-Category",
+        "gtk liability $":             "GTK \nLiability $",
+        "gtk \nliability $":           "GTK \nLiability $",
+        "actual gtk liability $":      "Actual GTK \nLiability $",
+        "actual gtk \nliability $":    "Actual GTK \nLiability $",
+        "dm #":                        "DM #",
+        "pl":                          "PL",
+        "rebate initiative %":         "Rebate Initiative %",
+        "actual payment":              "Actual Payment",
+        "saving":                      "Saving",
+        "payment received date":       "Payment Received Date",
+        "status":                      "Status",
+    }
+
+    def _import_excel(self):
+        if self._store is None:
+            messagebox.showwarning("No Data File", "Please connect a data file first (Connect Data).")
+            return
+
+        path = filedialog.askopenfilename(
+            title="Select Import Excel File",
+            filetypes=[("Excel files", "*.xlsx *.xlsm"), ("All files", "*.*")]
+        )
+        if not path:
+            return
+
+        try:
+            import openpyxl as _openpyxl
+            wb = _openpyxl.load_workbook(path, data_only=True)
+            ws = wb.active  # use the first/active sheet
+
+            raw_headers = [
+                str(c.value).strip() if c.value is not None else ""
+                for c in next(ws.iter_rows(min_row=1, max_row=1))
+            ]
+
+            # Map each source column index → internal column name (or None to skip)
+            col_map: list[str | None] = []
+            for h in raw_headers:
+                normalized = h.lower().replace("\n", " ").replace("  ", " ").strip()
+                col_map.append(self._IMPORT_COL_MAP.get(normalized))
+
+            rows_to_import: list[dict] = []
+            for excel_row in ws.iter_rows(min_row=2, values_only=True):
+                if all(v is None for v in excel_row):
+                    continue
+                row: dict = {}
+                for i, internal_col in enumerate(col_map):
+                    if internal_col is None:
+                        continue
+                    val = excel_row[i] if i < len(excel_row) else None
+                    row[internal_col] = val
+                # skip entirely blank rows
+                if not any(row.values()):
+                    continue
+                rows_to_import.append(row)
+
+            if not rows_to_import:
+                messagebox.showinfo("Import Excel", "No data rows found in the selected file.")
+                return
+
+            count = self._store.bulk_append_rows(rows_to_import)
+            self._refresh_table()
+            self._status_var.set(f"Imported {count} rows from: {os.path.basename(path)}")
+            messagebox.showinfo("Import Complete", f"Successfully imported {count} rows.")
+
+        except Exception as exc:
+            messagebox.showerror("Import Error", f"Failed to import file:\n{exc}")
 
     def _load_file(self, path: str):
         try:
@@ -417,6 +503,8 @@ class MainWindow:
                 tag = "stripe_yellow" if stripe else "yellow_dot"
             elif status in _STATUS_RED:
                 tag = "stripe_red" if stripe else "red_dot"
+            elif status in _STATUS_BLUE:
+                tag = "stripe_blue" if stripe else "blue_dot"
             else:
                 tag = "stripe" if stripe else ""
 
@@ -437,10 +525,58 @@ class MainWindow:
             return ""
         if col == "Actual Payment":
             try:
-                return f"${float(val):,.1f}"
+                amount = float(val)
+                formatted = f"${amount:,.1f}"
+                if amount > 500_000:
+                    formatted = "⚠ " + formatted
+                return formatted
             except (ValueError, TypeError):
                 return str(val)
         return str(val)
+
+    def _on_tree_motion(self, event: tk.Event):
+        """Show 'ESR Needed' tooltip when hovering over a ⚠ Actual Payment cell."""
+        region = self._tree.identify_region(event.x, event.y)
+        if region != "cell":
+            self._hide_tip()
+            return
+        col_id = self._tree.identify_column(event.x)
+        try:
+            col_index = int(col_id.lstrip("#")) - 1
+        except ValueError:
+            self._hide_tip()
+            return
+        cols = ["●"] + DISPLAY_COLUMNS
+        if col_index < 0 or col_index >= len(cols) or cols[col_index] != "Actual Payment":
+            self._hide_tip()
+            return
+        row_id = self._tree.identify_row(event.y)
+        if not row_id:
+            self._hide_tip()
+            return
+        cell_val = self._tree.set(row_id, col_id)
+        if not cell_val.startswith("⚠"):
+            self._hide_tip()
+            return
+        # Show tooltip
+        x = event.x_root + 14
+        y = event.y_root + 14
+        if self._tip_win:
+            self._tip_win.geometry(f"+{x}+{y}")
+            return
+        self._tip_win = tk.Toplevel(self._root)
+        self._tip_win.wm_overrideredirect(True)
+        self._tip_win.wm_geometry(f"+{x}+{y}")
+        lbl = tk.Label(self._tip_win, text="ESR Needed",
+                       background="#ffdd57", foreground="#1a1a1a",
+                       font=("Arial", 10, "bold"), relief="solid",
+                       borderwidth=1, padx=6, pady=3)
+        lbl.pack()
+
+    def _hide_tip(self, _event=None):
+        if self._tip_win:
+            self._tip_win.destroy()
+            self._tip_win = None
 
     def _sort_by(self, col: str):
         if self._sort_col == col:
@@ -485,9 +621,12 @@ class MainWindow:
         dlg = EntryFormDialog(self._root, existing_row=existing, title="Edit Entry",
                               store=self._store, pl_map=self._pl_map)
         self._root.wait_window(dlg)
-        result = dlg.get_result()
-        if result is not None and store_idx is not None:
-            self._store.update_row(store_idx, result)
+        if dlg.is_deleted() and store_idx is not None:
+            self._store.delete_row(store_idx)
+            self._refresh_table()
+            self._status_var.set("Entry deleted.")
+        elif dlg.get_result() is not None and store_idx is not None:
+            self._store.update_row(store_idx, dlg.get_result())
             self._refresh_table()
             self._status_var.set("Entry updated.")
 

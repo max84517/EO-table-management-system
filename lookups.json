@@ -2,14 +2,21 @@
   "ODM": ["Foxconn", "Inventec", "Pegatron", "Quanta", "Wistron"],
   "GBU": ["bDT", "bNB", "cDT", "cNB"],
   "GTK Supplier": ["AVC", "Auras", "BYS", "Catcher", "Chicony", "Cosmo", "Darfon", "Delta", "Deng He", "Dongju", "Elan", "FCN", "GD", "Hamagawa", "Huaying", "Juteng", "Kashui", "Kenseisha", "Kurz", "Liteon", "NCCI", "Primax", "Sentien", "Shangzhun", "Sunon", "Sunrex", "Synaptics", "Tayu", "XinXiu"],
-  "Sub-Category": [],
+  "Sub-Category": [
+    "Fingerprint/Touchpad",
+    "Keyboard",
+    "Metal",
+    "Soft Goods",
+    "Thermal"
+  ],
   "ESR need (Y/N)": ["Y", "N"],
   "Status": [
-    "1st version complete",
-    "2nd version complete",
+    "1st Ver Complete",
+    "2nd Ver Complete",
     "Finish",
-    "wait for contract approval",
-    "wait for contract sign",
-    "wait for DM"
+    "Halt",
+    "Wait for Contract Approval",
+    "Wait for Contract Sign",
+    "Wait for DM"
   ]
 }

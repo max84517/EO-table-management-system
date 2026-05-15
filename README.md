@@ -4,26 +4,27 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 
 ## Features
 
-- **Per-user login** — select or create a user at startup; each user's Excel file path is remembered separately; **per-column filters are also saved per user and restored on next login**
+- **Per-user login** — select or create a user at startup; each user's Excel file path is remembered separately; per-column filters and phase filter are saved per user and restored on next login
 - **Dark-mode UI** — built with CustomTkinter
-- **Interactive data table** — view key columns with click-to-sort (ascending/descending) on any column
-- **Status indicators** (based on `Status` field):
-  - 🔴 Red — **Confirming Numbers** (`1st Ver Complete`, `2nd Ver Complete`)
-  - 🟡 Yellow — **Contract & DM process** (`Wait for Contract Approval`, `Wait for Contract Sign`, `Wait for DM`)
-  - 🟢 Green — **Finish**
+- **Interactive data table** — columns: Sub-Category → Platform → GTK Supplier → Actual Payment → Status → DM # → Payment Received Date → Payment Received Quarter → Update Date; click any header to sort
+- **Status indicators** (● dot colour based on `Status` field):
+  - 🔴 Red — **GTK Deduction Phase** (`1st Ver Complete`, `2nd Ver Complete`)
+  - 🟡 Yellow — **Contract & DM Phase** (`Wait for Contract Approval`, `Wait for Contract Sign`, `Wait for DM`)
+  - 🟢 Green — **Complete** (`Finish`)
   - 🔵 Blue — **Halt**
 - **Default sort** — newest entries (by Update Date) shown first
 - **Search / filter** — real-time text filter across all visible columns
+- **Phase filter** — `Phase ▾` button in filter bar; multi-select by phase label (GTK Deduction Phase / Contract & DM Phase / Complete / Halt / Unknown); remembered per user
 - **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; filter state is remembered per user
 - **Add & edit entries** — form dialog with:
   - Free-text fields for Platform, GTK Liability, DM #, PL
   - Dropdown selectors (A-Z sorted) for ODM, GBU, Sub-Category, Status
-  - **GTK Supplier** uses a scrollable listbox dropdown (mouse-wheel supported) for easy navigation of long lists
+  - **GTK Supplier** uses a scrollable listbox dropdown (mouse-wheel supported)
   - Dark-mode calendar date picker for Payment Received Date (blank by default, clearable with ✕; enabled only when Status = Finish)
   - Platform → PL auto-mapping (case-insensitive lookup from PL map; manual override supported)
   - **Sub-Category smart form rules**:
-    - `Keyboard` / `Fingerprint/Touchpad` — Rebate Initiative % field shown; Actual Payment is **auto-calculated** (locked)
-    - All other sub-categories — Rebate Initiative % hidden; Actual Payment is **manually entered**
+    - `Keyboard` / `Fingerprint/Touchpad` — Rebate Initiative % and Actual GTK Liability shown; Actual Payment is **auto-calculated** (locked)
+    - All other sub-categories — those fields hidden; Actual Payment is **manually entered**
   - **Rebate Initiative %** — entered as integer (e.g. `10` for 10%); default `10`
 - **ESR warning** — cells where Actual Payment > 500,000 show a ⚠ icon; hover to see "ESR Needed" tooltip
 - **Auto-calculated fields**:

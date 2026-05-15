@@ -40,8 +40,8 @@ DISPLAY_COLUMNS = [
     "GTK Supplier",
     "Actual Payment",
     "Status",
+    "DM #",
     "Payment Received Date",
-    "PL",
     "Payment Received Quarter",
     "Update Date",
 ]

@@ -25,7 +25,16 @@ ctk.set_default_color_theme("blue")
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 
-# Status indicator colours
+# Phase filter labels and their status sets
+_PHASE_LABELS = [
+    "GTK Deduction Phase",
+    "Contract & DM Phase",
+    "Complete",
+    "Halt",
+    "Unknown",
+]
+_ALL_PHASES: set[str] = set(_PHASE_LABELS)
+
 COLOR_RED    = "#e84646"   # Confirming Numbers
 COLOR_YELLOW = "#d4a017"   # Contract & DM process
 COLOR_GREEN  = "#3dbb6e"   # Finish
@@ -44,8 +53,8 @@ COL_WIDTHS = {
     "GTK Supplier": 155,
     "Actual Payment": 140,
     "Status": 130,
+    "DM #": 110,
     "Payment Received Date": 170,
-    "PL": 120,
     "Payment Received Quarter": 165,
     "Update Date": 175,
 }
@@ -82,6 +91,8 @@ class MainWindow:
         self._seg_btn: Optional[ctk.CTkButton] = None
         # Column-level filters: col -> set of allowed values (missing key = no filter)
         self._col_filters: dict[str, set] = {}
+        # Phase filter: set of active phase labels (all = no filter)
+        self._phase_filter: set[str] = set(_PHASE_LABELS)  # default: all selected
 
         self._segment_active: set = set()  # kept for compat
         self._all_segments: list = []
@@ -137,13 +148,13 @@ class MainWindow:
         ctk.CTkLabel(filter_bar, text="Right-click column header to filter",
                      font=ctk.CTkFont(size=11), text_color="gray50").pack(side="left", padx=(0, 4))
 
-        # Coloured legend — packed right-to-left so green is on the far right
-        ctk.CTkLabel(filter_bar, text="● Complete",
-                     font=ctk.CTkFont(size=12), text_color="#3dbb6e").pack(side="right", padx=(0, 14))
-        ctk.CTkLabel(filter_bar, text="  |",
-                     font=ctk.CTkFont(size=12), text_color="gray50").pack(side="right")
-        ctk.CTkLabel(filter_bar, text="● Tracking  ",
-                     font=ctk.CTkFont(size=12), text_color="#e84646").pack(side="right")
+        # Phase filter button (right side of filter bar)
+        self._phase_btn = ctk.CTkButton(
+            filter_bar, text="Phase ▾", width=120, height=32,
+            font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
+            command=self._open_phase_filter,
+        )
+        self._phase_btn.pack(side="right", padx=(4, 14))
 
         # ---- Table area ----
         table_frame = tk.Frame(self._root, bg="#1e1e1e")
@@ -458,10 +469,115 @@ class MainWindow:
     def _save_segment_prefs(self):
         pass
 
+    def _row_phase(self, row: dict) -> str:
+        """Return the phase label for a row based on its Status."""
+        status = str(row.get("Status") or "").strip()
+        if status in _STATUS_RED:
+            return "GTK Deduction Phase"
+        if status in _STATUS_YELLOW:
+            return "Contract & DM Phase"
+        if status in _STATUS_GREEN:
+            return "Complete"
+        if status in _STATUS_BLUE:
+            return "Halt"
+        return "Unknown"
+
+    def _update_phase_btn_text(self):
+        if self._phase_filter == _ALL_PHASES:
+            self._phase_btn.configure(text="Phase ▾")
+        else:
+            self._phase_btn.configure(text=f"Phase ▾ ({len(self._phase_filter)})")
+
+    def _open_phase_filter(self):
+        popup = ctk.CTkToplevel(self._root)
+        popup.title("")
+        popup.overrideredirect(True)
+        popup.configure(fg_color="#2b2b2b")
+
+        ctk.CTkLabel(popup, text="Filter by Phase",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(padx=14, pady=(10, 4))
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+
+        _PHASE_COLORS = {
+            "GTK Deduction Phase": COLOR_RED,
+            "Contract & DM Phase": COLOR_YELLOW,
+            "Complete":            COLOR_GREEN,
+            "Halt":                COLOR_BLUE,
+            "Unknown":             "gray70",
+        }
+
+        temp_vars: dict[str, tk.BooleanVar] = {}
+        for label in _PHASE_LABELS:
+            temp_vars[label] = tk.BooleanVar(value=(label in self._phase_filter))
+
+        all_var = tk.BooleanVar(value=(self._phase_filter == _ALL_PHASES))
+
+        def _on_all():
+            on = all_var.get()
+            for bv in temp_vars.values():
+                bv.set(on)
+
+        def _on_item():
+            all_var.set(all(bv.get() for bv in temp_vars.values()))
+
+        ctk.CTkCheckBox(popup, text="(Select All)", variable=all_var,
+                        font=ctk.CTkFont(size=12),
+                        command=_on_all).pack(anchor="w", padx=14, pady=(4, 2))
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+
+        for label in _PHASE_LABELS:
+            color = _PHASE_COLORS[label]
+            ctk.CTkCheckBox(popup, text=label, variable=temp_vars[label],
+                            font=ctk.CTkFont(size=12), text_color=color,
+                            command=_on_item).pack(anchor="w", padx=14, pady=2)
+
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=(8, 10))
+
+        def _apply():
+            chosen = {lb for lb, bv in temp_vars.items() if bv.get()}
+            self._phase_filter = chosen if chosen else _ALL_PHASES
+            self._update_phase_btn_text()
+            self._refresh_table()
+            self._save_user_filters()
+            popup.destroy()
+
+        def _clear():
+            self._phase_filter = set(_PHASE_LABELS)
+            self._update_phase_btn_text()
+            self._refresh_table()
+            self._save_user_filters()
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text="Apply", width=90, height=30,
+                      font=ctk.CTkFont(size=12), command=_apply).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Clear", width=80, height=30,
+                      font=ctk.CTkFont(size=12), fg_color="gray40", hover_color="gray30",
+                      command=_clear).pack(side="left")
+
+        popup.update_idletasks()
+        bx = self._phase_btn.winfo_rootx()
+        by = self._phase_btn.winfo_rooty() + self._phase_btn.winfo_height() + 4
+        popup.geometry(f"+{bx}+{by}")
+
+        def _close_if_outside(event):
+            if not popup.winfo_exists():
+                return
+            px, py = popup.winfo_rootx(), popup.winfo_rooty()
+            pw, ph = popup.winfo_width(), popup.winfo_height()
+            if not (px <= event.x_root <= px + pw and py <= event.y_root <= py + ph):
+                popup.destroy()
+                self._root.unbind_all("<Button-1>")
+        popup.after(100, lambda: self._root.bind_all("<Button-1>", _close_if_outside))
+
     def _refresh_table(self):
         if self._store is None:
             return
         rows = self._store.get_rows()
+
+        # Apply phase filter
+        if self._phase_filter != _ALL_PHASES:
+            rows = [r for r in rows if self._row_phase(r) in self._phase_filter]
 
         # Apply column-level filters
         for _col, _allowed in self._col_filters.items():
@@ -671,26 +787,38 @@ class MainWindow:
             )
 
     def _save_user_filters(self):
-        """Persist current col_filters for the logged-in user to config.json."""
+        """Persist current col_filters and phase_filter for the logged-in user to config.json."""
         if not self._current_user:
             return
         cfg = _load_config()
         user_filters = cfg.get("user_filters", {})
-        # Sets are not JSON-serialisable — convert to sorted lists
         user_filters[self._current_user] = {
             col: sorted(vals) for col, vals in self._col_filters.items()
         }
         cfg["user_filters"] = user_filters
+        # Save phase filter (store as list; missing = all selected)
+        user_phase = cfg.get("user_phase_filters", {})
+        if self._phase_filter == _ALL_PHASES:
+            user_phase.pop(self._current_user, None)
+        else:
+            user_phase[self._current_user] = sorted(self._phase_filter)
+        cfg["user_phase_filters"] = user_phase
         _save_config(cfg)
 
     def _load_user_filters(self, user: str):
-        """Restore col_filters for the given user from config.json."""
+        """Restore col_filters and phase_filter for the given user from config.json."""
         cfg = _load_config()
         saved = cfg.get("user_filters", {}).get(user, {})
         self._col_filters = {col: set(vals) for col, vals in saved.items()}
-        # Rebuild heading indicators for restored filters
         for col in self._col_filters:
             self._update_heading_text(col)
+        # Restore phase filter
+        saved_phase = cfg.get("user_phase_filters", {}).get(user)
+        if saved_phase is not None:
+            self._phase_filter = set(saved_phase) & _ALL_PHASES
+        else:
+            self._phase_filter = set(_PHASE_LABELS)
+        self._update_phase_btn_text()
 
     def _select_user_at_startup(self):
         """Show user selector and load the user's saved Excel path."""

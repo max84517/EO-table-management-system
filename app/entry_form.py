@@ -366,9 +366,11 @@ class EntryFormDialog(ctk.CTkToplevel):
                 anchor="e", width=LABEL_WIDTH, font=self._fl,
             )
             lbl.grid(row=row_num, column=0, sticky="e", **pad)
-            # Keep reference to Rebate Initiative label for show/hide
+            # Keep reference to Rebate Initiative and Actual GTK Liability labels for show/hide
             if field == "Rebate Initiative %":
                 self._rebate_label = lbl
+            if field == "Actual GTK \nLiability $":
+                self._actual_gtk_label = lbl
 
             if field == "Payment Received Date":
                 # Only pre-fill if editing an existing row with a date value
@@ -517,6 +519,17 @@ class EntryFormDialog(ctk.CTkToplevel):
             else:
                 rebate_label.grid_remove()
                 rebate_widget.grid_remove()
+
+        # Show / hide Actual GTK Liability $
+        actual_gtk_widget = self._widgets.get("Actual GTK \nLiability $")
+        actual_gtk_label  = getattr(self, "_actual_gtk_label", None)
+        if actual_gtk_widget is not None and actual_gtk_label is not None:
+            if is_keyboard:
+                actual_gtk_label.grid()
+                actual_gtk_widget.grid()
+            else:
+                actual_gtk_label.grid_remove()
+                actual_gtk_widget.grid_remove()
 
     def _on_status_changed(self, *_):
         """Enable Payment Received Date only when Status=Finish AND Actual GTK Liability filled."""

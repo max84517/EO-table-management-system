@@ -29,3 +29,9 @@ Thumbs.db
 
 # PyInstaller
 *.exe
+
+# Excel files — do not track any Excel data/source files
+*.xlsx
+*.xlsb
+*.xlsm
+*.xls

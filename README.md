@@ -4,7 +4,7 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 
 ## Features
 
-- **Per-user login** — select or create a user at startup; each user's Excel file path is remembered separately
+- **Per-user login** — select or create a user at startup; each user's Excel file path is remembered separately; **per-column filters are also saved per user and restored on next login**
 - **Dark-mode UI** — built with CustomTkinter
 - **Interactive data table** — view key columns with click-to-sort (ascending/descending) on any column
 - **Status indicators** (based on `Status` field):
@@ -14,16 +14,20 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
   - 🔵 Blue — **Halt**
 - **Default sort** — newest entries (by Update Date) shown first
 - **Search / filter** — real-time text filter across all visible columns
-- **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; click anywhere outside to dismiss
+- **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; filter state is remembered per user
 - **Add & edit entries** — form dialog with:
-  - Free-text fields for Platform, GTK Liability, DM #, PL, Rebate %
+  - Free-text fields for Platform, GTK Liability, DM #, PL
   - Dropdown selectors (A-Z sorted) for ODM, GBU, Sub-Category, Status
   - **GTK Supplier** uses a scrollable listbox dropdown (mouse-wheel supported) for easy navigation of long lists
   - Dark-mode calendar date picker for Payment Received Date (blank by default, clearable with ✕; enabled only when Status = Finish)
   - Platform → PL auto-mapping (case-insensitive lookup from PL map; manual override supported)
+  - **Sub-Category smart form rules**:
+    - `Keyboard` / `Fingerprint/Touchpad` — Rebate Initiative % field shown; Actual Payment is **auto-calculated** (locked)
+    - All other sub-categories — Rebate Initiative % hidden; Actual Payment is **manually entered**
+  - **Rebate Initiative %** — entered as integer (e.g. `10` for 10%); default `10`
 - **ESR warning** — cells where Actual Payment > 500,000 show a ⚠ icon; hover to see "ESR Needed" tooltip
 - **Auto-calculated fields**:
-  - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — rounded to 1 decimal
+  - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — for Keyboard / Fingerprint/Touchpad; rounded to 1 decimal
   - `Saving = GTK Liability − Actual Payment` — rounded to 1 decimal
   - `ESR need (Y/N)` — auto-set: `Y` if Actual Payment > 500,000, else `N`
   - `Payment Received Quarter` — HP fiscal quarter (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)

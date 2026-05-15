@@ -394,12 +394,14 @@ class MainWindow:
                 self._col_filters[col] = chosen
             self._update_heading_text(col)
             self._refresh_table()
+            self._save_user_filters()
             popup.destroy()
 
         def _clear():
             self._col_filters.pop(col, None)
             self._update_heading_text(col)
             self._refresh_table()
+            self._save_user_filters()
             popup.destroy()
 
         ctk.CTkButton(btn_row, text="Apply", width=90, height=30,
@@ -508,7 +510,6 @@ class MainWindow:
             else:
                 tag = "stripe" if stripe else ""
 
-            # Store original index in iid
             self._tree.insert("", "end", iid=str(id(row)) + str(i),
                                values=values, tags=(tag,))
 
@@ -669,6 +670,28 @@ class MainWindow:
                 parent=self._root,
             )
 
+    def _save_user_filters(self):
+        """Persist current col_filters for the logged-in user to config.json."""
+        if not self._current_user:
+            return
+        cfg = _load_config()
+        user_filters = cfg.get("user_filters", {})
+        # Sets are not JSON-serialisable — convert to sorted lists
+        user_filters[self._current_user] = {
+            col: sorted(vals) for col, vals in self._col_filters.items()
+        }
+        cfg["user_filters"] = user_filters
+        _save_config(cfg)
+
+    def _load_user_filters(self, user: str):
+        """Restore col_filters for the given user from config.json."""
+        cfg = _load_config()
+        saved = cfg.get("user_filters", {}).get(user, {})
+        self._col_filters = {col: set(vals) for col, vals in saved.items()}
+        # Rebuild heading indicators for restored filters
+        for col in self._col_filters:
+            self._update_heading_text(col)
+
     def _select_user_at_startup(self):
         """Show user selector and load the user's saved Excel path."""
         cfg = _load_config()
@@ -691,6 +714,9 @@ class MainWindow:
         self._current_user = selected
         self._user_label.configure(text=f"👤 {selected}")
         self._root.title(f"EO Table Management — {selected}")
+
+        # Restore this user's column filters
+        self._load_user_filters(selected)
 
         # Load user's remembered Excel path
         user_paths = cfg.get("user_paths", {})

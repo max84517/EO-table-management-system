@@ -77,20 +77,40 @@ def _quarter_label(d: date) -> str:
 def compute_derived(row: dict) -> dict:
     """Fill in Actual Payment, Saving, Payment Received Quarter from raw fields.
     Rebate Initiative % is stored as a display value (e.g. 10 means 10%).
+    For Sub-Category = 'Keyboard': Actual Payment is always auto-calculated.
+    For all others: use manually entered Actual Payment if provided, else calculate.
     """
-    try:
-        gtk_liability = float(row.get("Actual GTK \nLiability $") or 0)
-        rebate_raw = row.get("Rebate Initiative %")
-        if rebate_raw is None or rebate_raw == "":
-            rebate_pct = 0.0
-        else:
-            val = float(rebate_raw)
-            # Accept both 0.10 (already decimal) and 10 (percent)
-            rebate_pct = val if val <= 1.0 else val / 100.0
-        actual_payment = gtk_liability * (1 - rebate_pct)
-        row["Actual Payment"] = round(actual_payment, 1)
-    except (ValueError, TypeError):
-        row["Actual Payment"] = None
+    sub_cat = str(row.get("Sub-Category") or "").strip()
+    is_keyboard = sub_cat in ("Keyboard", "Fingerprint/Touchpad")
+
+    # Determine Actual Payment
+    manual_ap = row.get("Actual Payment")
+    manual_ap_provided = (
+        not is_keyboard
+        and manual_ap is not None
+        and str(manual_ap).strip() not in ("", "None")
+    )
+
+    if manual_ap_provided:
+        try:
+            row["Actual Payment"] = round(float(manual_ap), 1)
+        except (ValueError, TypeError):
+            row["Actual Payment"] = None
+    else:
+        # Auto-calculate from GTK Liability × (1 − rebate%)
+        try:
+            gtk_liability = float(row.get("Actual GTK \nLiability $") or 0)
+            rebate_raw = row.get("Rebate Initiative %")
+            if rebate_raw is None or rebate_raw == "":
+                rebate_pct = 0.0
+            else:
+                val = float(rebate_raw)
+                # Accept both 0.10 (already decimal) and 10 (percent)
+                rebate_pct = val if val <= 1.0 else val / 100.0
+            actual_payment = gtk_liability * (1 - rebate_pct)
+            row["Actual Payment"] = round(actual_payment, 1)
+        except (ValueError, TypeError):
+            row["Actual Payment"] = None
 
     try:
         gtk_orig = float(row.get("GTK \nLiability $") or 0)

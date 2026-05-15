@@ -24,6 +24,7 @@ FREE_TEXT_FIELDS = [
     "DM #",
     "PL",
     "Rebate Initiative %",
+    "Actual Payment",
 ]
 
 # All form fields (order matters for layout)
@@ -39,6 +40,7 @@ FORM_FIELDS = [
     "DM #",
     "PL",
     "Rebate Initiative %",
+    "Actual Payment",
     "Payment Received Date",
 ]
 
@@ -339,9 +341,13 @@ class EntryFormDialog(ctk.CTkToplevel):
             self._vars["Status"].trace_add("write", self._on_status_changed)
         if "Actual GTK \nLiability $" in self._vars:
             self._vars["Actual GTK \nLiability $"].trace_add("write", self._on_status_changed)
+        if "Sub-Category" in self._vars:
+            self._vars["Sub-Category"].trace_add("write", self._on_subcategory_changed)
 
         # Set initial date-picker state
         self._on_status_changed()
+        # Set initial Actual Payment lock state
+        self._on_subcategory_changed()
 
         self._center(parent)
 
@@ -355,10 +361,14 @@ class EntryFormDialog(ctk.CTkToplevel):
 
         for idx, field in enumerate(FORM_FIELDS):
             row_num = idx + 1
-            ctk.CTkLabel(
+            lbl = ctk.CTkLabel(
                 self, text=_label_text(field) + ":",
                 anchor="e", width=LABEL_WIDTH, font=self._fl,
-            ).grid(row=row_num, column=0, sticky="e", **pad)
+            )
+            lbl.grid(row=row_num, column=0, sticky="e", **pad)
+            # Keep reference to Rebate Initiative label for show/hide
+            if field == "Rebate Initiative %":
+                self._rebate_label = lbl
 
             if field == "Payment Received Date":
                 # Only pre-fill if editing an existing row with a date value
@@ -381,11 +391,29 @@ class EntryFormDialog(ctk.CTkToplevel):
             elif field in FREE_TEXT_FIELDS:
                 var = tk.StringVar()
                 if existing_row and existing_row.get(field) is not None:
-                    var.set(str(existing_row[field]))
+                    raw_val = existing_row[field]
+                    if field == "Rebate Initiative %" and raw_val not in (None, ""):
+                        try:
+                            fv = float(raw_val)
+                            # Convert decimal fraction stored in Excel (e.g. 0.1) → integer display (10)
+                            display_val = int(round(fv * 100)) if fv <= 1.0 else int(round(fv))
+                            raw_val = str(display_val)
+                        except (ValueError, TypeError):
+                            raw_val = str(raw_val)
+                    var.set(str(raw_val))
+                elif field == "Rebate Initiative %":
+                    var.set("10")  # default 10%
                 entry = ctk.CTkEntry(self, textvariable=var, width=INPUT_WIDTH, height=34, font=self._fl)
                 entry.grid(row=row_num, column=1, sticky="w", **pad)
                 self._vars[field] = var
                 self._widgets[field] = entry
+
+                if field == "Actual Payment":
+                    # Small hint label shown to the right when locked
+                    hint = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11),
+                                        text_color="gray55")
+                    hint.grid(row=row_num, column=2, sticky="w", padx=(0, 8))
+                    self._ap_hint_label = hint
 
             else:
                 options_sorted = sorted(self._lookups.get(field, []))
@@ -458,6 +486,37 @@ class EntryFormDialog(ctk.CTkToplevel):
         if self._auto_filling:
             return
         self._pl_manually_set = True
+
+    def _on_subcategory_changed(self, *_):
+        """Lock Actual Payment entry when Sub-Category is Keyboard/Fingerprint/Touchpad.
+        Also hide Rebate Initiative % for other sub-categories."""
+        sub_var = self._vars.get("Sub-Category")
+        ap_widget = self._widgets.get("Actual Payment")
+        ap_label  = getattr(self, "_ap_hint_label", None)
+        rebate_widget = self._widgets.get("Rebate Initiative %")
+        rebate_label  = getattr(self, "_rebate_label", None)
+
+        is_keyboard = sub_var is not None and sub_var.get().strip() in ("Keyboard", "Fingerprint/Touchpad")
+
+        # Lock / unlock Actual Payment
+        if ap_widget is not None:
+            if is_keyboard:
+                ap_widget.configure(state="disabled", text_color="gray50",
+                                    placeholder_text="Auto-calculated")
+            else:
+                ap_widget.configure(state="normal", text_color="white",
+                                    placeholder_text="")
+        if ap_label:
+            ap_label.configure(text="(auto-calculated)" if is_keyboard else "")
+
+        # Show / hide Rebate Initiative %
+        if rebate_widget is not None and rebate_label is not None:
+            if is_keyboard:
+                rebate_label.grid()
+                rebate_widget.grid()
+            else:
+                rebate_label.grid_remove()
+                rebate_widget.grid_remove()
 
     def _on_status_changed(self, *_):
         """Enable Payment Received Date only when Status=Finish AND Actual GTK Liability filled."""

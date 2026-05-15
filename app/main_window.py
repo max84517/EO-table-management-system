@@ -93,6 +93,8 @@ class MainWindow:
         self._col_filters: dict[str, set] = {}
         # Phase filter: set of active phase labels (all = no filter)
         self._phase_filter: set[str] = set(_PHASE_LABELS)  # default: all selected
+        # Quarter filter: empty set = all (no filter)
+        self._quarter_filter: set[str] = set()
 
         self._segment_active: set = set()  # kept for compat
         self._all_segments: list = []
@@ -114,9 +116,6 @@ class MainWindow:
         ctk.CTkButton(top, text="Manage Options", width=128, height=32,
                       font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
                       command=self._open_lookup_editor).pack(side="right", padx=4)
-        ctk.CTkButton(top, text="Import Excel", width=110, height=32,
-                      font=ctk.CTkFont(size=12), fg_color="#4a4a8a", hover_color="#35356e",
-                      command=self._import_excel).pack(side="right", padx=4)
         ctk.CTkButton(top, text="Connect Data", width=110, height=32,
                       font=ctk.CTkFont(size=12), command=self._browse_file).pack(side="right", padx=4)
         self._refresh_pl_btn = ctk.CTkButton(
@@ -155,6 +154,14 @@ class MainWindow:
             command=self._open_phase_filter,
         )
         self._phase_btn.pack(side="right", padx=(4, 14))
+
+        # Quarter filter button
+        self._quarter_btn = ctk.CTkButton(
+            filter_bar, text="Quarter ▾", width=120, height=32,
+            font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
+            command=self._open_quarter_filter,
+        )
+        self._quarter_btn.pack(side="right", padx=(4, 4))
 
         # ---- Table area ----
         table_frame = tk.Frame(self._root, bg="#1e1e1e")
@@ -224,9 +231,13 @@ class MainWindow:
 
         # ---- Status bar ----
         self._status_var = tk.StringVar(value="Ready")
-        status_bar = ctk.CTkLabel(self._root, textvariable=self._status_var,
-                                  font=ctk.CTkFont(size=12), text_color="gray60", anchor="w")
-        status_bar.pack(side="bottom", fill="x", padx=14, pady=(0, 5))
+        self._summary_var = tk.StringVar(value="")
+        status_frame = ctk.CTkFrame(self._root, height=28, corner_radius=0, fg_color="transparent")
+        status_frame.pack(side="bottom", fill="x", padx=14, pady=(0, 5))
+        ctk.CTkLabel(status_frame, textvariable=self._status_var,
+                     font=ctk.CTkFont(size=12), text_color="gray60", anchor="w").pack(side="left")
+        ctk.CTkLabel(status_frame, textvariable=self._summary_var,
+                     font=ctk.CTkFont(size=12), text_color="gray55", anchor="e").pack(side="right")
 
     # --------------------------------------------------------------- actions --
     def _browse_file(self):
@@ -570,6 +581,98 @@ class MainWindow:
                 self._root.unbind_all("<Button-1>")
         popup.after(100, lambda: self._root.bind_all("<Button-1>", _close_if_outside))
 
+    def _update_quarter_btn_text(self):
+        if not self._quarter_filter:
+            self._quarter_btn.configure(text="Quarter ▾")
+        else:
+            self._quarter_btn.configure(text=f"Quarter ▾ ({len(self._quarter_filter)})")
+
+    def _open_quarter_filter(self):
+        if self._store is None:
+            return
+        all_quarters = sorted(
+            {str(r.get("Payment Received Quarter") or "").strip() for r in self._store.get_rows()},
+            key=lambda v: ("ÿ" if v == "" else v.lower()),
+        )
+        if not all_quarters:
+            return
+
+        current = self._quarter_filter
+        popup = ctk.CTkToplevel(self._root)
+        popup.title("")
+        popup.overrideredirect(True)
+        popup.configure(fg_color="#2b2b2b")
+
+        ctk.CTkLabel(popup, text="Filter by Quarter",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(padx=14, pady=(10, 4))
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+
+        temp_vars: dict[str, tk.BooleanVar] = {}
+        for v in all_quarters:
+            temp_vars[v] = tk.BooleanVar(value=(not current) or (v in current))
+
+        all_var = tk.BooleanVar(value=not current)
+
+        def _on_all():
+            on = all_var.get()
+            for bv in temp_vars.values():
+                bv.set(on)
+
+        def _on_item():
+            all_var.set(all(bv.get() for bv in temp_vars.values()))
+
+        ctk.CTkCheckBox(popup, text="(Select All)", variable=all_var,
+                        font=ctk.CTkFont(size=12, weight="bold"),
+                        command=_on_all).pack(anchor="w", padx=14, pady=3)
+
+        scroll_h = min(len(all_quarters) * 30 + 10, 260)
+        scroll = ctk.CTkScrollableFrame(popup, fg_color="transparent", width=210, height=scroll_h)
+        scroll.pack(padx=6, pady=2)
+        for v in all_quarters:
+            ctk.CTkCheckBox(scroll, text=(v if v else "(blank)"),
+                            variable=temp_vars[v], font=ctk.CTkFont(size=12),
+                            command=_on_item).pack(anchor="w", pady=2)
+
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=(4, 10))
+
+        def _apply():
+            chosen = {v for v, bv in temp_vars.items() if bv.get()}
+            self._quarter_filter = set() if len(chosen) == len(all_quarters) else chosen
+            self._update_quarter_btn_text()
+            self._refresh_table()
+            self._save_user_filters()
+            popup.destroy()
+
+        def _clear():
+            self._quarter_filter = set()
+            self._update_quarter_btn_text()
+            self._refresh_table()
+            self._save_user_filters()
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text="Apply", width=90, height=30,
+                      font=ctk.CTkFont(size=12), command=_apply).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Clear", width=80, height=30,
+                      font=ctk.CTkFont(size=12), fg_color="gray40", hover_color="gray30",
+                      command=_clear).pack(side="left")
+
+        popup.update_idletasks()
+        bx = self._quarter_btn.winfo_rootx()
+        by = self._quarter_btn.winfo_rooty() + self._quarter_btn.winfo_height() + 4
+        popup.geometry(f"+{bx}+{by}")
+
+        def _close_if_outside(event):
+            if not popup.winfo_exists():
+                return
+            px, py = popup.winfo_rootx(), popup.winfo_rooty()
+            pw, ph = popup.winfo_width(), popup.winfo_height()
+            if not (px <= event.x_root <= px + pw and py <= event.y_root <= py + ph):
+                popup.destroy()
+                self._root.unbind_all("<Button-1>")
+        popup.after(100, lambda: self._root.bind_all("<Button-1>", _close_if_outside))
+
     def _refresh_table(self):
         if self._store is None:
             return
@@ -578,6 +681,11 @@ class MainWindow:
         # Apply phase filter
         if self._phase_filter != _ALL_PHASES:
             rows = [r for r in rows if self._row_phase(r) in self._phase_filter]
+
+        # Apply quarter filter
+        if self._quarter_filter:
+            rows = [r for r in rows
+                    if str(r.get("Payment Received Quarter") or "").strip() in self._quarter_filter]
 
         # Apply column-level filters
         for _col, _allowed in self._col_filters.items():
@@ -631,6 +739,22 @@ class MainWindow:
 
         # Store rows list for edit lookup
         self._current_rows = rows
+
+        # Update summary bar
+        n = len(rows)
+        ap_total = sum(
+            float(r.get("Actual Payment") or 0)
+            for r in rows
+            if r.get("Actual Payment") not in (None, "")
+        )
+        sv_total = sum(
+            float(r.get("Saving") or 0)
+            for r in rows
+            if r.get("Saving") not in (None, "")
+        )
+        self._summary_var.set(
+            f"{n} rows  |  Actual Payment: ${ap_total:,.1f}  |  Saving: ${sv_total:,.1f}"
+        )
 
     def _fmt(self, val) -> str:
         if val is None:
@@ -803,6 +927,13 @@ class MainWindow:
         else:
             user_phase[self._current_user] = sorted(self._phase_filter)
         cfg["user_phase_filters"] = user_phase
+        # Save quarter filter (empty list = all)
+        user_quarter = cfg.get("user_quarter_filters", {})
+        if not self._quarter_filter:
+            user_quarter.pop(self._current_user, None)
+        else:
+            user_quarter[self._current_user] = sorted(self._quarter_filter)
+        cfg["user_quarter_filters"] = user_quarter
         _save_config(cfg)
 
     def _load_user_filters(self, user: str):
@@ -819,6 +950,10 @@ class MainWindow:
         else:
             self._phase_filter = set(_PHASE_LABELS)
         self._update_phase_btn_text()
+        # Restore quarter filter
+        saved_quarter = cfg.get("user_quarter_filters", {}).get(user)
+        self._quarter_filter = set(saved_quarter) if saved_quarter else set()
+        self._update_quarter_btn_text()
 
     def _select_user_at_startup(self):
         """Show user selector and load the user's saved Excel path."""

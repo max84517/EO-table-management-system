@@ -15,6 +15,7 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 - **Default sort** — newest entries (by Update Date) shown first
 - **Search / filter** — real-time text filter across all visible columns
 - **Phase filter** — `Phase ▾` button in filter bar; multi-select by phase label (GTK Deduction Phase / Contract & DM Phase / Complete / Halt / Unknown); remembered per user
+- **Quarter filter** — `Quarter ▾` button in filter bar; multi-select by Payment Received Quarter value (dynamic, based on data); remembered per user
 - **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; filter state is remembered per user
 - **Add & edit entries** — form dialog with:
   - Free-text fields for Platform, GTK Liability, DM #, PL
@@ -34,8 +35,7 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
   - `Payment Received Quarter` — HP fiscal quarter (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)
   - `Update Date` — auto-set to current timestamp on every save
 - **Connect Data** — connect to the target Excel workbook (stores path per user)
-- **Import Excel** — bulk-import rows from a separate Excel file; all derived fields are auto-calculated on import
-  - Template available at `data/excel template/EO_Import_Template.xlsx`
+- **Summary bar** — right side of the status bar shows the current filtered row count, and totals for Actual Payment and Saving
 - **PL Mapper** — reads `.xlsb`/`.xlsx` source files from `data/PL Source/`, generates `data/PL output/PL map.xlsx`; **Refresh PL** button re-runs in background
 - **Manage Options** — add/remove dropdown choices stored in `lookups.json`; bulk import from Excel supported
 - **Writes back to Excel** — updates the `Data` sheet in the source workbook

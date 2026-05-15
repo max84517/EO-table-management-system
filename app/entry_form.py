@@ -532,15 +532,13 @@ class EntryFormDialog(ctk.CTkToplevel):
                 actual_gtk_widget.grid_remove()
 
     def _on_status_changed(self, *_):
-        """Enable Payment Received Date only when Status=Finish AND Actual GTK Liability filled."""
+        """Enable Payment Received Date whenever Status = Finish."""
         picker = self._widgets.get("Payment Received Date")
         if picker is None:
             return
         status = self._vars.get("Status")
-        actual = self._vars.get("Actual GTK \nLiability $")
         status_ok = status is not None and status.get().strip() == "Finish"
-        actual_ok = actual is not None and actual.get().strip() not in ("", "0")
-        picker.set_enabled(status_ok and actual_ok)
+        picker.set_enabled(status_ok)
 
     # --------------------------------------------------- validation on save --
     def _on_save(self):

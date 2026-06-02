@@ -41,7 +41,7 @@ FORM_FIELDS = [
     "PL",
     "Rebate Initiative %",
     "Actual Payment",
-    "Payment Received Date",
+    "DM Issued Date",
 ]
 
 INPUT_WIDTH = 300
@@ -372,7 +372,7 @@ class EntryFormDialog(ctk.CTkToplevel):
             if field == "Actual GTK \nLiability $":
                 self._actual_gtk_label = lbl
 
-            if field == "Payment Received Date":
+            if field == "DM Issued Date":
                 # Only pre-fill if editing an existing row with a date value
                 init_date: Optional[date] = None
                 if existing_row and existing_row.get(field):
@@ -532,8 +532,8 @@ class EntryFormDialog(ctk.CTkToplevel):
                 actual_gtk_widget.grid_remove()
 
     def _on_status_changed(self, *_):
-        """Enable Payment Received Date whenever Status = Finish."""
-        picker = self._widgets.get("Payment Received Date")
+        """Enable DM Issued Date whenever Status = Finish."""
+        picker = self._widgets.get("DM Issued Date")
         if picker is None:
             return
         status = self._vars.get("Status")
@@ -581,7 +581,7 @@ class EntryFormDialog(ctk.CTkToplevel):
             widget = self._widgets.get(field)
             if widget is None:
                 row[field] = None
-            elif field == "Payment Received Date":
+            elif field == "DM Issued Date":
                 row[field] = widget.get_date_str()
             else:
                 var = self._vars.get(field)

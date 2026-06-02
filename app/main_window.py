@@ -51,11 +51,11 @@ COL_WIDTHS = {
     "Sub-Category": 140,
     "Platform": 130,
     "GTK Supplier": 155,
+    "GTK \nLiability $": 130,
     "Actual Payment": 140,
+    "Saving": 120,
     "Status": 130,
-    "DM #": 110,
-    "Payment Received Date": 170,
-    "Payment Received Quarter": 165,
+    "DM Issued Quarter": 165,
     "Update Date": 175,
 }
 
@@ -95,6 +95,8 @@ class MainWindow:
         self._phase_filter: set[str] = set(_PHASE_LABELS)  # default: all selected
         # Quarter filter: empty set = all (no filter)
         self._quarter_filter: set[str] = set()
+        # Sub-Category filter: empty set = all (no filter)
+        self._subcat_filter: set[str] = set()
 
         self._segment_active: set = set()  # kept for compat
         self._all_segments: list = []
@@ -163,6 +165,14 @@ class MainWindow:
         )
         self._quarter_btn.pack(side="right", padx=(4, 4))
 
+        # Sub-Category filter button (leftmost = packed last)
+        self._subcat_btn = ctk.CTkButton(
+            filter_bar, text="Sub-Category ▾", width=140, height=32,
+            font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
+            command=self._open_subcat_filter,
+        )
+        self._subcat_btn.pack(side="right", padx=(4, 4))
+
         # ---- Table area ----
         table_frame = tk.Frame(self._root, bg="#1e1e1e")
         table_frame.pack(fill="both", expand=True, padx=8, pady=8)
@@ -203,11 +213,12 @@ class MainWindow:
         # Configure columns
         for col in cols:
             w = COL_WIDTHS.get(col, 120)
-            self._tree.heading(col, text=col, anchor="center",
+            display_text = col.replace("\n", " ")
+            self._tree.heading(col, text=display_text, anchor="center",
                                command=lambda c=col: self._sort_by(c))
             self._tree.column(col, width=w, minwidth=40, stretch=(col != "●"), anchor="center")
 
-        self._col_header_base = {c: c for c in cols}  # track base label for sort arrows
+        self._col_header_base = {c: c.replace("\n", " ") for c in cols}  # track base label for sort arrows
 
         # Row tags for status indicator colours
         self._tree.tag_configure("red_dot",     foreground=COLOR_RED)
@@ -264,7 +275,7 @@ class MainWindow:
         "rebate initiative %":         "Rebate Initiative %",
         "actual payment":              "Actual Payment",
         "saving":                      "Saving",
-        "payment received date":       "Payment Received Date",
+        "payment received date":       "DM Issued Date",
         "status":                      "Status",
     }
 
@@ -581,6 +592,98 @@ class MainWindow:
                 self._root.unbind_all("<Button-1>")
         popup.after(100, lambda: self._root.bind_all("<Button-1>", _close_if_outside))
 
+    def _update_subcat_btn_text(self):
+        if not self._subcat_filter:
+            self._subcat_btn.configure(text="Sub-Category ▾")
+        else:
+            self._subcat_btn.configure(text=f"Sub-Category ▾ ({len(self._subcat_filter)})")
+
+    def _open_subcat_filter(self):
+        if self._store is None:
+            return
+        all_values = sorted(
+            {str(r.get("Sub-Category") or "").strip() for r in self._store.get_rows()},
+            key=lambda v: ("ÿ" if v == "" else v.lower()),
+        )
+        if not all_values:
+            return
+
+        current = self._subcat_filter
+        popup = ctk.CTkToplevel(self._root)
+        popup.title("")
+        popup.overrideredirect(True)
+        popup.configure(fg_color="#2b2b2b")
+
+        ctk.CTkLabel(popup, text="Filter by Sub-Category",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(padx=14, pady=(10, 4))
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+
+        temp_vars: dict[str, tk.BooleanVar] = {}
+        for v in all_values:
+            temp_vars[v] = tk.BooleanVar(value=(not current) or (v in current))
+
+        all_var = tk.BooleanVar(value=not current)
+
+        def _on_all():
+            on = all_var.get()
+            for bv in temp_vars.values():
+                bv.set(on)
+
+        def _on_item():
+            all_var.set(all(bv.get() for bv in temp_vars.values()))
+
+        ctk.CTkCheckBox(popup, text="(Select All)", variable=all_var,
+                        font=ctk.CTkFont(size=12, weight="bold"),
+                        command=_on_all).pack(anchor="w", padx=14, pady=3)
+
+        scroll_h = min(len(all_values) * 30 + 10, 260)
+        scroll = ctk.CTkScrollableFrame(popup, fg_color="transparent", width=210, height=scroll_h)
+        scroll.pack(padx=6, pady=2)
+        for v in all_values:
+            ctk.CTkCheckBox(scroll, text=(v if v else "(blank)"),
+                            variable=temp_vars[v], font=ctk.CTkFont(size=12),
+                            command=_on_item).pack(anchor="w", pady=2)
+
+        ctk.CTkFrame(popup, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=2)
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=(4, 10))
+
+        def _apply():
+            chosen = {v for v, bv in temp_vars.items() if bv.get()}
+            self._subcat_filter = set() if len(chosen) == len(all_values) else chosen
+            self._update_subcat_btn_text()
+            self._refresh_table()
+            self._save_user_filters()
+            popup.destroy()
+
+        def _clear():
+            self._subcat_filter = set()
+            self._update_subcat_btn_text()
+            self._refresh_table()
+            self._save_user_filters()
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text="Apply", width=90, height=30,
+                      font=ctk.CTkFont(size=12), command=_apply).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Clear", width=80, height=30,
+                      font=ctk.CTkFont(size=12), fg_color="gray40", hover_color="gray30",
+                      command=_clear).pack(side="left")
+
+        popup.update_idletasks()
+        bx = self._subcat_btn.winfo_rootx()
+        by = self._subcat_btn.winfo_rooty() + self._subcat_btn.winfo_height() + 4
+        popup.geometry(f"+{bx}+{by}")
+
+        def _close_if_outside(event):
+            if not popup.winfo_exists():
+                return
+            px, py = popup.winfo_rootx(), popup.winfo_rooty()
+            pw, ph = popup.winfo_width(), popup.winfo_height()
+            if not (px <= event.x_root <= px + pw and py <= event.y_root <= py + ph):
+                popup.destroy()
+                self._root.unbind_all("<Button-1>")
+        popup.after(100, lambda: self._root.bind_all("<Button-1>", _close_if_outside))
+
     def _update_quarter_btn_text(self):
         if not self._quarter_filter:
             self._quarter_btn.configure(text="Quarter ▾")
@@ -591,7 +694,7 @@ class MainWindow:
         if self._store is None:
             return
         all_quarters = sorted(
-            {str(r.get("Payment Received Quarter") or "").strip() for r in self._store.get_rows()},
+            {str(r.get("DM Issued Quarter") or "").strip() for r in self._store.get_rows()},
             key=lambda v: ("ÿ" if v == "" else v.lower()),
         )
         if not all_quarters:
@@ -682,10 +785,15 @@ class MainWindow:
         if self._phase_filter != _ALL_PHASES:
             rows = [r for r in rows if self._row_phase(r) in self._phase_filter]
 
+        # Apply sub-category filter
+        if self._subcat_filter:
+            rows = [r for r in rows
+                    if str(r.get("Sub-Category") or "").strip() in self._subcat_filter]
+
         # Apply quarter filter
         if self._quarter_filter:
             rows = [r for r in rows
-                    if str(r.get("Payment Received Quarter") or "").strip() in self._quarter_filter]
+                    if str(r.get("DM Issued Quarter") or "").strip() in self._quarter_filter]
 
         # Apply column-level filters
         for _col, _allowed in self._col_filters.items():
@@ -702,7 +810,7 @@ class MainWindow:
         if self._sort_col == "●":
             # Sort by payment status: ascending = red (no payment) first
             rows = sorted(rows,
-                          key=lambda r: (1 if bool(r.get("Payment Received Date")) else 0),
+                          key=lambda r: (1 if bool(r.get("DM Issued Date")) else 0),
                           reverse=not self._sort_asc)
         elif self._sort_col:
             def _key(r):
@@ -771,6 +879,18 @@ class MainWindow:
                 if amount > 500_000:
                     formatted = "⚠ " + formatted
                 return formatted
+            except (ValueError, TypeError):
+                return str(val)
+        if col == "Saving":
+            try:
+                return f"${float(val):,.1f}"
+            except (ValueError, TypeError):
+                return str(val)
+        if col == "GTK \nLiability $":
+            try:
+                return f"${float(val):,.1f}"
+            except (ValueError, TypeError):
+                return str(val)
             except (ValueError, TypeError):
                 return str(val)
         return str(val)
@@ -934,6 +1054,13 @@ class MainWindow:
         else:
             user_quarter[self._current_user] = sorted(self._quarter_filter)
         cfg["user_quarter_filters"] = user_quarter
+        # Save sub-category filter
+        user_subcat = cfg.get("user_subcat_filters", {})
+        if not self._subcat_filter:
+            user_subcat.pop(self._current_user, None)
+        else:
+            user_subcat[self._current_user] = sorted(self._subcat_filter)
+        cfg["user_subcat_filters"] = user_subcat
         _save_config(cfg)
 
     def _load_user_filters(self, user: str):
@@ -954,6 +1081,10 @@ class MainWindow:
         saved_quarter = cfg.get("user_quarter_filters", {}).get(user)
         self._quarter_filter = set(saved_quarter) if saved_quarter else set()
         self._update_quarter_btn_text()
+        # Restore sub-category filter
+        saved_subcat = cfg.get("user_subcat_filters", {}).get(user)
+        self._subcat_filter = set(saved_subcat) if saved_subcat else set()
+        self._update_subcat_btn_text()
 
     def _select_user_at_startup(self):
         """Show user selector and load the user's saved Excel path."""

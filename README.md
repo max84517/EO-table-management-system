@@ -6,7 +6,7 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 
 - **Per-user login** — select or create a user at startup; each user's Excel file path is remembered separately; per-column filters and phase filter are saved per user and restored on next login
 - **Dark-mode UI** — built with CustomTkinter
-- **Interactive data table** — columns: Sub-Category → Platform → GTK Supplier → Actual Payment → Status → DM # → Payment Received Date → Payment Received Quarter → Update Date; click any header to sort
+- **Interactive data table** — columns: Sub-Category → Platform → GTK Supplier → GTK Liability $ → Actual Payment → Saving → Status → DM Issued Quarter → Update Date; click any header to sort
 - **Status indicators** (● dot colour based on `Status` field):
   - 🔴 Red — **GTK Deduction Phase** (`1st Ver Complete`, `2nd Ver Complete`)
   - 🟡 Yellow — **Contract & DM Phase** (`Wait for Contract Approval`, `Wait for Contract Sign`, `Wait for DM`)
@@ -14,14 +14,15 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
   - 🔵 Blue — **Halt**
 - **Default sort** — newest entries (by Update Date) shown first
 - **Search / filter** — real-time text filter across all visible columns
+- **Sub-Category filter** — `Sub-Category ▾` button in filter bar; multi-select; remembered per user
 - **Phase filter** — `Phase ▾` button in filter bar; multi-select by phase label (GTK Deduction Phase / Contract & DM Phase / Complete / Halt / Unknown); remembered per user
-- **Quarter filter** — `Quarter ▾` button in filter bar; multi-select by Payment Received Quarter value (dynamic, based on data); remembered per user
+- **Quarter filter** — `Quarter ▾` button in filter bar; multi-select by DM Issued Quarter value (dynamic, based on data); remembered per user
 - **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; filter state is remembered per user
 - **Add & edit entries** — form dialog with:
   - Free-text fields for Platform, GTK Liability, DM #, PL
   - Dropdown selectors (A-Z sorted) for ODM, GBU, Sub-Category, Status
   - **GTK Supplier** uses a scrollable listbox dropdown (mouse-wheel supported)
-  - Dark-mode calendar date picker for Payment Received Date (blank by default, clearable with ✕; enabled only when Status = Finish)
+  - Dark-mode calendar date picker for DM Issued Date (blank by default, clearable with ✕; enabled only when Status = Finish)
   - Platform → PL auto-mapping (case-insensitive lookup from PL map; manual override supported)
   - **Sub-Category smart form rules**:
     - `Keyboard` / `Fingerprint/Touchpad` — Rebate Initiative % and Actual GTK Liability shown; Actual Payment is **auto-calculated** (locked)
@@ -32,7 +33,7 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
   - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — for Keyboard / Fingerprint/Touchpad; rounded to 1 decimal
   - `Saving = GTK Liability − Actual Payment` — rounded to 1 decimal
   - `ESR need (Y/N)` — auto-set: `Y` if Actual Payment > 500,000, else `N`
-  - `Payment Received Quarter` — HP fiscal quarter (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)
+  - `DM Issued Quarter` — HP fiscal quarter derived from DM Issued Date (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)
   - `Update Date` — auto-set to current timestamp on every save
 - **Connect Data** — connect to the target Excel workbook (stores path per user)
 - **Summary bar** — right side of the status bar shows the current filtered row count, and totals for Actual Payment and Saving
@@ -117,8 +118,8 @@ Required columns (exact header text):
 | Rebate Initiative % | Free text (number, e.g. `10` for 10%) |
 | Actual Payment | **Auto-calculated** |
 | Saving | **Auto-calculated** |
-| Payment Received Date | Calendar picker |
-| Payment Received Quarter | **Auto-calculated** |
+| DM Issued Date | Calendar picker |
+| DM Issued Quarter | **Auto-calculated** |
 | Update Date | **Auto-set** |
 
 ## Configuration
@@ -163,7 +164,7 @@ Required columns (exact header text):
 A ready-to-use template is included at `data/excel template/EO_Import_Template.xlsx`.
 
 Fill in the columns below and click **Import Excel** in the app to bulk-import rows.  
-Derived fields (`Actual Payment`, `Saving`, `ESR need`, `Payment Received Quarter`, `Update Date`) are calculated automatically during import.
+Derived fields (`Actual Payment`, `Saving`, `ESR need`, `DM Issued Quarter`, `Update Date`) are calculated automatically during import.
 
 | Column | Notes |
 |--------|-------|

@@ -29,8 +29,8 @@ ALL_COLUMNS = [
     "Rebate Initiative %",
     "Actual Payment",
     "Saving",
-    "Payment Received Date",
-    "Payment Received Quarter",
+    "DM Issued Date",
+    "DM Issued Quarter",
     "Update Date",
 ]
 
@@ -38,11 +38,11 @@ DISPLAY_COLUMNS = [
     "Sub-Category",
     "Platform",
     "GTK Supplier",
+    "GTK \nLiability $",
     "Actual Payment",
+    "Saving",
     "Status",
-    "DM #",
-    "Payment Received Date",
-    "Payment Received Quarter",
+    "DM Issued Quarter",
     "Update Date",
 ]
 
@@ -75,7 +75,7 @@ def _quarter_label(d: date) -> str:
 
 
 def compute_derived(row: dict) -> dict:
-    """Fill in Actual Payment, Saving, Payment Received Quarter from raw fields.
+    """Fill in Actual Payment, Saving, DM Issued Quarter from raw fields.
     Rebate Initiative % is stored as a display value (e.g. 10 means 10%).
     For Sub-Category = 'Keyboard': Actual Payment is always auto-calculated.
     For all others: use manually entered Actual Payment if provided, else calculate.
@@ -96,8 +96,8 @@ def compute_derived(row: dict) -> dict:
             row["Actual Payment"] = round(float(manual_ap), 1)
         except (ValueError, TypeError):
             row["Actual Payment"] = None
-    else:
-        # Auto-calculate from GTK Liability × (1 − rebate%)
+    elif is_keyboard:
+        # Auto-calculate from Actual GTK Liability × (1 − rebate%)
         try:
             gtk_liability = float(row.get("Actual GTK \nLiability $") or 0)
             rebate_raw = row.get("Rebate Initiative %")
@@ -111,12 +111,19 @@ def compute_derived(row: dict) -> dict:
             row["Actual Payment"] = round(actual_payment, 1)
         except (ValueError, TypeError):
             row["Actual Payment"] = None
+    else:
+        # Non-KB/FP with no manual entry — leave blank
+        row["Actual Payment"] = None
 
-    try:
-        gtk_orig = float(row.get("GTK \nLiability $") or 0)
-        row["Saving"] = round(gtk_orig - (row["Actual Payment"] or 0), 1)
-    except (ValueError, TypeError):
+    ap = row.get("Actual Payment")
+    if ap is None:
         row["Saving"] = None
+    else:
+        try:
+            gtk_orig = float(row.get("GTK \nLiability $") or 0)
+            row["Saving"] = round(gtk_orig - float(ap), 1)
+        except (ValueError, TypeError):
+            row["Saving"] = None
 
     # ESR need: auto-calculate based on Actual Payment threshold
     actual = row.get("Actual Payment")
@@ -128,7 +135,7 @@ def compute_derived(row: dict) -> dict:
         except (ValueError, TypeError):
             row["ESR need (Y/N)"] = ""
 
-    prd = row.get("Payment Received Date")
+    prd = row.get("DM Issued Date")
     if prd:
         if isinstance(prd, str):
             try:
@@ -138,11 +145,11 @@ def compute_derived(row: dict) -> dict:
         if isinstance(prd, datetime):
             prd = prd.date()
         if prd:
-            row["Payment Received Quarter"] = _quarter_label(prd)
+            row["DM Issued Quarter"] = _quarter_label(prd)
         else:
-            row["Payment Received Quarter"] = None
+            row["DM Issued Quarter"] = None
     else:
-        row["Payment Received Quarter"] = None
+        row["DM Issued Quarter"] = None
 
     return row
 
@@ -152,6 +159,14 @@ class ExcelDataStore:
         self.filepath = filepath
         self._rows: list[dict] = []
         self._load()
+
+    # Columns whose float values should be rounded to 2 decimal places on load
+    _ROUND2_COLS = {
+        "GTK \nLiability $",
+        "Actual GTK \nLiability $",
+        "Actual Payment",
+        "Saving",
+    }
 
     # ------------------------------------------------------------------ read --
     def _load(self):
@@ -170,10 +185,10 @@ class ExcelDataStore:
                 continue
             row = {}
             for i, h in enumerate(headers):
-                if i < len(excel_row):
-                    row[h] = excel_row[i]
-                else:
-                    row[h] = None
+                v = excel_row[i] if i < len(excel_row) else None
+                if h in self._ROUND2_COLS and isinstance(v, float):
+                    v = round(v, 2)
+                row[h] = v
             rows.append(row)
         self._rows = rows
 
@@ -210,6 +225,19 @@ class ExcelDataStore:
         if count:
             self._save()
         return count
+
+    def recalculate_all(self) -> int:
+        """Re-run compute_derived on every row and save. Returns number of rows updated.
+        Rows with empty Update Date will have it filled with the current timestamp (one-time backfill).
+        """
+        self._load()  # re-read from Excel first to pick up any external edits
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for row in self._rows:
+            compute_derived(row)
+            if not row.get("Update Date"):
+                row["Update Date"] = now
+        self._save()
+        return len(self._rows)
 
     def _save(self):
         if os.path.exists(self.filepath):

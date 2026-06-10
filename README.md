@@ -36,6 +36,7 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
   - `DM Issued Quarter` — HP fiscal quarter derived from DM Issued Date (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)
   - `Update Date` — auto-set to current timestamp on every save
 - **Connect Data** — connect to the target Excel workbook (stores path per user)
+- **Auto-create Platform folder** — when adding a new entry, a folder named after the Platform is automatically created in the same directory as the connected Excel file; if the folder already exists, an info message is shown
 - **Summary bar** — right side of the status bar shows the current filtered row count, and totals for Actual Payment and Saving
 - **PL Mapper** — reads `.xlsb`/`.xlsx` source files from `data/PL Source/`, generates `data/PL output/PL map.xlsx`; **Refresh PL** button re-runs in background
 - **Manage Options** — add/remove dropdown choices stored in `lookups.json`; bulk import from Excel supported

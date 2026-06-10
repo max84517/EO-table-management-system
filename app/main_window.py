@@ -963,6 +963,24 @@ class MainWindow:
             self._store.append_row(result)
             self._refresh_table()
             self._status_var.set("Entry added.")
+            # Create a folder named after the Platform inside the Excel's directory
+            platform = str(result.get("Platform") or "").strip()
+            if platform and self._filepath:
+                base_dir = os.path.dirname(self._filepath)
+                folder_path = os.path.join(base_dir, platform)
+                if os.path.isdir(folder_path):
+                    messagebox.showinfo(
+                        "Folder Already Exists",
+                        f'Folder already exists at:\n{folder_path}',
+                        parent=self._root,
+                    )
+                else:
+                    os.makedirs(folder_path, exist_ok=True)
+                    messagebox.showinfo(
+                        "Folder Created",
+                        f'New folder created at:\n{folder_path}',
+                        parent=self._root,
+                    )
 
     def _on_double_click(self, event):
         item = self._tree.focus()

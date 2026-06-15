@@ -118,6 +118,9 @@ class MainWindow:
         ctk.CTkButton(top, text="Manage Options", width=128, height=32,
                       font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
                       command=self._open_lookup_editor).pack(side="right", padx=4)
+        ctk.CTkButton(top, text="Import Excel", width=110, height=32,
+                      font=ctk.CTkFont(size=12), fg_color="#4a4a8a", hover_color="#35356e",
+                      command=self._import_excel).pack(side="right", padx=4)
         ctk.CTkButton(top, text="Connect Data", width=110, height=32,
                       font=ctk.CTkFont(size=12), command=self._browse_file).pack(side="right", padx=4)
         self._refresh_pl_btn = ctk.CTkButton(

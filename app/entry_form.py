@@ -616,3 +616,372 @@ class EntryFormDialog(ctk.CTkToplevel):
         x = max(0, sw // 2 - w // 2)
         y = max(0, sh // 2 - h // 2)
         self.geometry(f"+{x}+{y}")
+
+
+# ──────────────────────────── Compact Date Picker ────────────────────────────
+
+class CompactDatePicker(ctk.CTkFrame):
+    """Minimal date picker for multi-entry rows: one button showing the date + one ✕."""
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, fg_color="transparent", **kwargs)
+        self._date: Optional[date] = None
+
+        self._btn = ctk.CTkButton(
+            self, text="Pick date", width=110, height=30,
+            font=ctk.CTkFont(size=12),
+            fg_color="#1f538d", hover_color="#174b7a",
+            command=self._open_picker,
+        )
+        self._btn.pack(side="left", padx=(0, 4))
+
+        self._clear_btn = ctk.CTkButton(
+            self, text="✕", width=28, height=30,
+            font=ctk.CTkFont(size=11),
+            fg_color="gray35", hover_color="#8b2020",
+            command=self._clear,
+        )
+        self._clear_btn.pack(side="left")
+
+    def _open_picker(self):
+        popup = ctk.CTkToplevel(self)
+        popup.title("Select Date")
+        popup.resizable(False, False)
+        popup.grab_set()
+        popup.configure(fg_color="#1e1e1e")
+
+        show_date = self._date or date.today()
+        cal = Calendar(
+            popup, selectmode="day",
+            year=show_date.year, month=show_date.month, day=show_date.day,
+            date_pattern="yyyy-mm-dd",
+            background="#1f538d", foreground="white",
+            headersbackground="#1f538d", headersforeground="white",
+            normalbackground="#2b2b2b", normalforeground="white",
+            weekendbackground="#2b2b2b", weekendforeground="#8ab4f8",
+            othermonthforeground="#555555", othermonthweforeground="#555555",
+            selectbackground="#1f538d", selectforeground="white",
+            bordercolor="#3a3a3a", borderwidth=0, font=("Arial", 12),
+        )
+        cal.pack(padx=12, pady=(12, 6))
+        ctk.CTkButton(popup, text="Confirm", width=120, height=34,
+                      font=ctk.CTkFont(size=13),
+                      command=lambda: self._confirm(cal, popup)).pack(pady=(0, 12))
+        popup.update_idletasks()
+        sw = popup.winfo_screenwidth(); sh = popup.winfo_screenheight()
+        pw = popup.winfo_reqwidth();   ph = popup.winfo_reqheight()
+        popup.geometry(f"+{max(0, sw//2 - pw//2)}+{max(0, sh//2 - ph//2)}")
+
+    def _confirm(self, cal: Calendar, popup):
+        try:
+            self._date = datetime.strptime(cal.get_date(), "%Y-%m-%d").date()
+            self._btn.configure(text=self._date.strftime("%Y-%m-%d"))
+        except Exception:
+            pass
+        popup.destroy()
+
+    def _clear(self):
+        self._date = None
+        self._btn.configure(text="Pick date")
+
+    def get_date_str(self) -> str:
+        return self._date.strftime("%Y-%m-%d") if self._date else ""
+
+
+# ──────────────────────────── Multi-Entry Dialog ─────────────────────────────
+
+class MultiEntryDialog(ctk.CTkToplevel):
+    """Add multiple entries sharing the same Platform / ODM / GBU / PL / Status / DM #,
+    each with its own Sub-Category, GTK Supplier, GTK Liability, etc."""
+
+    # Per-row variable fields
+    _ROW_FIELDS = [
+        "Sub-Category",
+        "GTK Supplier",
+        "GTK \nLiability $",
+        "Actual GTK \nLiability $",
+        "Rebate Initiative %",
+        "Actual Payment",
+        "DM Issued Date",
+    ]
+
+    def __init__(self, parent, store=None, pl_map: Optional[dict] = None):
+        super().__init__(parent)
+        self.title("Add Multiple Entries")
+        self.resizable(True, True)
+        self.grab_set()
+
+        self._store = store
+        self._pl_map: dict = pl_map or {}
+        self._lookups = _load_lookups()
+        self._results: list[dict] = []
+
+        # Shared field vars
+        self._shared_vars: dict[str, tk.StringVar] = {
+            f: tk.StringVar() for f in ["Platform", "ODM", "GBU", "PL", "Status", "DM #"]
+        }
+        # PL auto-fill state
+        self._auto_filling = False
+        self._pl_manually_set = False
+
+        # Each item: dict of {field: tk.StringVar | DarkDatePicker}
+        self._row_data: list[dict] = []
+        self._row_frames: list[ctk.CTkFrame] = []
+
+        self._build_ui()
+        self._add_row()   # start with one empty row
+
+        self._center(parent)
+
+    def _build_ui(self):
+        font13 = ctk.CTkFont(size=13)
+        font_bold = ctk.CTkFont(size=14, weight="bold")
+
+        # ── Shared fields ──
+        shared_outer = ctk.CTkFrame(self, fg_color="#1e1e1e", corner_radius=8)
+        shared_outer.pack(fill="x", padx=14, pady=(14, 6))
+
+        ctk.CTkLabel(shared_outer, text="Shared Fields",
+                     font=font_bold, text_color="#4db8ff").pack(anchor="w", padx=10, pady=(8, 4))
+
+        shared_grid = ctk.CTkFrame(shared_outer, fg_color="transparent")
+        shared_grid.pack(fill="x", padx=10, pady=(0, 8))
+
+        shared_display = [
+            ("Platform", "free"),
+            ("ODM",      "dropdown"),
+            ("GBU",      "dropdown"),
+            ("Status",   "dropdown"),
+            ("DM #",     "free"),
+            ("PL",       "free"),
+        ]
+
+        odm_vals   = self._lookups.get("ODM", [])
+        gbu_vals   = self._lookups.get("GBU", [])
+        status_vals = self._lookups.get("Status", [])
+
+        for i, (field, kind) in enumerate(shared_display):
+            row_i, col_i = divmod(i, 3)
+            lf = ctk.CTkFrame(shared_grid, fg_color="transparent")
+            lf.grid(row=row_i, column=col_i, padx=8, pady=4, sticky="w")
+            ctk.CTkLabel(lf, text=_label_text(field),
+                         font=font13, width=90, anchor="w").pack(side="left", padx=(0, 6))
+            var = self._shared_vars[field]
+            if kind == "free":
+                w = ctk.CTkEntry(lf, textvariable=var, width=160, height=32, font=font13)
+                w.pack(side="left")
+            else:
+                vals = {"ODM": odm_vals, "GBU": gbu_vals, "Status": status_vals}[field]
+                w = ScrollableDropdown(lf, variable=var, values=vals, width=160, height=32, font=font13)
+                w.pack(side="left")
+
+        # Auto-fill PL from Platform
+        self._shared_vars["Platform"].trace_add("write", self._on_platform_changed)
+        self._shared_vars["PL"].trace_add("write", self._on_pl_changed)
+
+        # ── Row section header ──
+        row_header = ctk.CTkFrame(self, fg_color="transparent")
+        row_header.pack(fill="x", padx=14, pady=(4, 0))
+        ctk.CTkLabel(row_header, text="Per-Supplier Rows",
+                     font=font_bold, text_color="#4db8ff").pack(side="left")
+        ctk.CTkButton(row_header, text="+ Add Row", width=100, height=28,
+                      font=ctk.CTkFont(size=12), fg_color="#2a5040", hover_color="#1e3a2e",
+                      command=self._add_row).pack(side="right")
+
+        # ── Scrollable rows container ──
+        self._rows_scroll = ctk.CTkScrollableFrame(self, fg_color="#1a1a1a", corner_radius=6)
+        self._rows_scroll.pack(fill="both", expand=True, padx=14, pady=(4, 8))
+
+        # ── Bottom buttons ──
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=(0, 12))
+        ctk.CTkButton(btn_row, text="Save All", width=120, height=34,
+                      font=ctk.CTkFont(size=13),
+                      command=self._on_save).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Cancel", width=100, height=34,
+                      font=ctk.CTkFont(size=13),
+                      fg_color="gray35", hover_color="gray25",
+                      command=self.destroy).pack(side="left")
+
+        self.geometry("1100x620")
+
+    def _add_row(self):
+        idx = len(self._row_data)
+        font12 = ctk.CTkFont(size=12)
+
+        frame = ctk.CTkFrame(self._rows_scroll, fg_color="#2b2b2b", corner_radius=6)
+        frame.pack(fill="x", pady=4, padx=2)
+
+        # Row number label
+        num_label = ctk.CTkLabel(frame, text=f"#{idx+1}", width=28,
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color="gray60")
+        num_label.grid(row=0, column=0, padx=(6, 2), pady=6)
+
+        lookups = self._lookups
+        subcat_vals   = lookups.get("Sub-Category", [])
+        supplier_vals = lookups.get("GTK Supplier", [])
+
+        vars_: dict[str, tk.StringVar | CompactDatePicker] = {}
+        vars_["_num_label"] = num_label
+        col = 1
+        for field in self._ROW_FIELDS:
+            lf = ctk.CTkFrame(frame, fg_color="transparent")
+            lf.grid(row=0, column=col, padx=4, pady=6, sticky="w")
+
+            ctk.CTkLabel(lf, text=_label_text(field),
+                         font=ctk.CTkFont(size=11), text_color="gray60",
+                         anchor="w").pack(anchor="w")
+
+            if field == "DM Issued Date":
+                picker = CompactDatePicker(lf)
+                picker.pack()
+                vars_[field] = picker
+            elif field == "Sub-Category":
+                var = tk.StringVar()
+                w = ScrollableDropdown(lf, variable=var, values=subcat_vals,
+                                       width=130, height=30, font=("Arial", 12))
+                w.pack()
+                vars_[field] = var
+                # Bind sub-category change to lock/unlock Actual Payment
+                var.trace_add("write", lambda *_, i=idx: self._on_subcat_changed(i))
+            elif field == "GTK Supplier":
+                var = tk.StringVar()
+                w = ScrollableDropdown(lf, variable=var, values=supplier_vals,
+                                       width=130, height=30, font=("Arial", 12))
+                w.pack()
+                vars_[field] = var
+            elif field == "Actual Payment":
+                var = tk.StringVar()
+                entry = ctk.CTkEntry(lf, textvariable=var, width=110, height=30, font=font12)
+                entry.pack()
+                vars_[field] = var
+                # Store entry widget reference for enable/disable
+                vars_["_ap_entry"] = entry
+            else:
+                var = tk.StringVar()
+                # Rebate default
+                if field == "Rebate Initiative %":
+                    var.set("10")
+                    # Bind to auto-calc
+                    var.trace_add("write", lambda *_, i=idx: self._on_subcat_changed(i))
+                if field == "Actual GTK \nLiability $":
+                    var.trace_add("write", lambda *_, i=idx: self._on_subcat_changed(i))
+                ctk.CTkEntry(lf, textvariable=var, width=110, height=30, font=font12).pack()
+                vars_[field] = var
+
+            col += 1
+
+        # Remove button — trash icon, aligned with field widgets (bottom of cell)
+        rm_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        rm_frame.grid(row=0, column=col, padx=(4, 6), pady=(20, 6), sticky="s")
+        ctk.CTkButton(rm_frame, text="🗑", width=32, height=30,
+                      font=ctk.CTkFont(size=14),
+                      fg_color="gray35", hover_color="#8b2020",
+                      command=lambda f=frame, i=idx: self._remove_row(f, i)).pack()
+
+        self._row_data.append(vars_)
+        self._row_frames.append(frame)
+
+    def _remove_row(self, frame: ctk.CTkFrame, idx: int):
+        if len(self._row_data) <= 1:
+            return  # always keep at least one row
+        frame.destroy()
+        try:
+            self._row_data.pop(idx)
+            self._row_frames.pop(idx)
+        except IndexError:
+            pass
+        # Re-number remaining rows
+        for i, vars_ in enumerate(self._row_data):
+            lbl = vars_.get("_num_label")
+            if lbl and lbl.winfo_exists():
+                lbl.configure(text=f"#{i+1}")
+
+    def _on_subcat_changed(self, idx: int):
+        """Auto-calculate Actual Payment for KB/FP rows; lock/unlock the entry."""
+        try:
+            vars_ = self._row_data[idx]
+        except IndexError:
+            return
+        sub_var = vars_.get("Sub-Category")
+        is_keyboard = (
+            sub_var is not None
+            and isinstance(sub_var, tk.StringVar)
+            and sub_var.get().strip() in ("Keyboard", "Fingerprint/Touchpad")
+        )
+        ap_var   = vars_.get("Actual Payment")
+        ap_entry = vars_.get("_ap_entry")
+        if ap_entry and isinstance(ap_var, tk.StringVar):
+            if is_keyboard:
+                ap_entry.configure(state="disabled", text_color="gray50")
+                # Auto-calculate
+                try:
+                    gtk_val  = float((vars_.get("Actual GTK \nLiability $") or tk.StringVar()).get() or 0)
+                    reb_raw  = (vars_.get("Rebate Initiative %") or tk.StringVar()).get().strip()
+                    reb      = float(reb_raw) if reb_raw else 0.0
+                    reb_pct  = reb / 100.0 if reb > 1.0 else reb
+                    ap_entry.configure(state="normal", text_color="gray50")
+                    ap_var.set(str(round(gtk_val * (1 - reb_pct), 1)))
+                    ap_entry.configure(state="disabled")
+                except (ValueError, TypeError):
+                    pass
+            else:
+                ap_entry.configure(state="normal", text_color="white")
+
+    def _on_platform_changed(self, *_):
+        if self._auto_filling or self._pl_manually_set:
+            return
+        platform = self._shared_vars["Platform"].get().strip().lower()
+        auto_pl = self._pl_map.get(platform, "")
+        self._auto_filling = True
+        self._shared_vars["PL"].set(auto_pl)
+        self._auto_filling = False
+
+    def _on_pl_changed(self, *_):
+        if self._auto_filling:
+            return
+        self._pl_manually_set = True
+
+    def _on_save(self):
+        from tkinter import messagebox as _mb
+        platform = self._shared_vars["Platform"].get().strip()
+        if not platform:
+            _mb.showwarning("Missing Platform", "Please enter a Platform.", parent=self)
+            return
+
+        shared = {f: v.get().strip() for f, v in self._shared_vars.items()}
+
+        rows_out = []
+        for i, vars_ in enumerate(self._row_data):
+            row = dict(shared)
+            for field in self._ROW_FIELDS:
+                if field == "DM Issued Date":
+                    picker = vars_.get(field)
+                    row[field] = picker.get_date_str() if isinstance(picker, CompactDatePicker) else ""
+                elif field.startswith("_"):
+                    continue
+                else:
+                    v = vars_.get(field)
+                    row[field] = v.get().strip() if isinstance(v, tk.StringVar) else ""
+            rows_out.append(row)
+
+        if not rows_out:
+            self.destroy()
+            return
+
+        self._results = rows_out
+        self.destroy()
+
+    def get_results(self) -> list[dict]:
+        return self._results
+
+    def _center(self, parent):
+        self.update_idletasks()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        w = self.winfo_reqwidth()
+        h = self.winfo_reqheight()
+        x = max(0, sw // 2 - w // 2)
+        y = max(0, sh // 2 - h // 2)
+        self.geometry(f"+{x}+{y}")

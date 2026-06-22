@@ -42,7 +42,7 @@ COLOR_BLUE   = "#5bc8e8"   # Halt
 
 _STATUS_GREEN  = {"Finish"}
 _STATUS_YELLOW = {"Wait for Contract Approval", "Wait for Contract Sign", "Wait for DM", "2nd Ver Complete"}
-_STATUS_RED    = {"1st Ver Complete", "Prepareing for 1st Ver"}
+_STATUS_RED    = {"1st Ver Complete", "Preparing for 1st Ver"}
 _STATUS_BLUE   = {"Halt"}
 
 # Column widths for treeview

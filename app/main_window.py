@@ -15,7 +15,7 @@ from typing import Optional
 import customtkinter as ctk
 
 from app.data_store import DISPLAY_COLUMNS, ExcelDataStore
-from app.entry_form import EntryFormDialog, MultiEntryDialog
+from app.entry_form import EntryFormDialog, MultiEntryDialog, ManagePlatformDialog
 from app.lookup_editor import LookupEditorDialog
 from app.pl_mapper import load_pl_map, refresh_pl_map
 from app.user_selector import UserSelectorDialog
@@ -115,6 +115,9 @@ class MainWindow:
         # Right-side buttons (packed before path label to guarantee visibility)
         ctk.CTkButton(top, text="+ Add Entries", width=120, height=32,
                       font=ctk.CTkFont(size=12), command=self._add_multiple_entries).pack(side="right", padx=(4, 12))
+        ctk.CTkButton(top, text="Manage Platform", width=132, height=32,
+                      font=ctk.CTkFont(size=12), fg_color="#5a3a6a", hover_color="#3e2848",
+                      command=self._manage_platform).pack(side="right", padx=4)
         ctk.CTkButton(top, text="Manage Options", width=128, height=32,
                       font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
                       command=self._open_lookup_editor).pack(side="right", padx=4)
@@ -954,6 +957,14 @@ class MainWindow:
             if prev and hasattr(self, "_col_header_base"):
                 self._update_heading_text(prev)
         self._update_heading_text(col)
+        self._refresh_table()
+
+    def _manage_platform(self):
+        if self._store is None:
+            messagebox.showwarning("No file", "Please open an Excel file first.")
+            return
+        dlg = ManagePlatformDialog(self._root, store=self._store, pl_map=self._pl_map)
+        self._root.wait_window(dlg)
         self._refresh_table()
 
     def _add_multiple_entries(self):

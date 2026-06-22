@@ -226,6 +226,16 @@ class ExcelDataStore:
             self._save()
         return count
 
+    def bulk_update_rows(self, index_row_pairs: list[tuple[int, dict]]) -> int:
+        """Update multiple rows by store index. Returns number updated."""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for idx, row in sorted(index_row_pairs, reverse=True):
+            row = compute_derived(row)
+            row["Update Date"] = now
+            self._rows[idx] = row
+        self._save()
+        return len(index_row_pairs)
+
     def recalculate_all(self) -> int:
         """Re-run compute_derived on every row and save. Returns number of rows updated.
         Rows with empty Update Date will have it filled with the current timestamp (one-time backfill).

@@ -15,7 +15,7 @@ from typing import Optional
 import customtkinter as ctk
 
 from app.data_store import DISPLAY_COLUMNS, ExcelDataStore
-from app.entry_form import EntryFormDialog
+from app.entry_form import EntryFormDialog, MultiEntryDialog, ManagePlatformDialog
 from app.lookup_editor import LookupEditorDialog
 from app.pl_mapper import load_pl_map, refresh_pl_map
 from app.user_selector import UserSelectorDialog
@@ -41,8 +41,8 @@ COLOR_GREEN  = "#3dbb6e"   # Finish
 COLOR_BLUE   = "#5bc8e8"   # Halt
 
 _STATUS_GREEN  = {"Finish"}
-_STATUS_YELLOW = {"Wait for Contract Approval", "Wait for Contract Sign", "Wait for DM"}
-_STATUS_RED    = {"1st Ver Complete", "2nd Ver Complete"}
+_STATUS_YELLOW = {"Wait for Contract Approval", "Wait for Contract Sign", "Wait for DM", "2nd Ver Complete"}
+_STATUS_RED    = {"1st Ver Complete", "Preparing for 1st Ver"}
 _STATUS_BLUE   = {"Halt"}
 
 # Column widths for treeview
@@ -113,11 +113,17 @@ class MainWindow:
         top.pack_propagate(False)
 
         # Right-side buttons (packed before path label to guarantee visibility)
-        ctk.CTkButton(top, text="+ Add Entry", width=105, height=32,
-                      font=ctk.CTkFont(size=12), command=self._add_entry).pack(side="right", padx=(4, 12))
+        ctk.CTkButton(top, text="+ Add Entries", width=120, height=32,
+                      font=ctk.CTkFont(size=12), command=self._add_multiple_entries).pack(side="right", padx=(4, 12))
+        ctk.CTkButton(top, text="Manage Platform", width=132, height=32,
+                      font=ctk.CTkFont(size=12), fg_color="#5a3a6a", hover_color="#3e2848",
+                      command=self._manage_platform).pack(side="right", padx=4)
         ctk.CTkButton(top, text="Manage Options", width=128, height=32,
                       font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
                       command=self._open_lookup_editor).pack(side="right", padx=4)
+        ctk.CTkButton(top, text="Import Excel", width=110, height=32,
+                      font=ctk.CTkFont(size=12), fg_color="#4a4a8a", hover_color="#35356e",
+                      command=self._import_excel).pack(side="right", padx=4)
         ctk.CTkButton(top, text="Connect Data", width=110, height=32,
                       font=ctk.CTkFont(size=12), command=self._browse_file).pack(side="right", padx=4)
         self._refresh_pl_btn = ctk.CTkButton(
@@ -276,6 +282,8 @@ class MainWindow:
         "actual payment":              "Actual Payment",
         "saving":                      "Saving",
         "payment received date":       "DM Issued Date",
+        "dm issued date":              "DM Issued Date",
+        "dm issue date":               "DM Issued Date",
         "status":                      "Status",
     }
 
@@ -950,6 +958,36 @@ class MainWindow:
                 self._update_heading_text(prev)
         self._update_heading_text(col)
         self._refresh_table()
+
+    def _manage_platform(self):
+        if self._store is None:
+            messagebox.showwarning("No file", "Please open an Excel file first.")
+            return
+        dlg = ManagePlatformDialog(self._root, store=self._store, pl_map=self._pl_map)
+        self._root.wait_window(dlg)
+        self._refresh_table()
+
+    def _add_multiple_entries(self):
+        if self._store is None:
+            messagebox.showwarning("No file", "Please open an Excel file first.")
+            return
+        dlg = MultiEntryDialog(self._root, store=self._store, pl_map=self._pl_map)
+        self._root.wait_window(dlg)
+        results = dlg.get_results()
+        if results:
+            self._store.bulk_append_rows(results)
+            self._refresh_table()
+            self._status_var.set(f"{len(results)} entries added.")
+            # Create Platform folder for each unique platform
+            platforms_done: set[str] = set()
+            for row in results:
+                platform = str(row.get("Platform") or "").strip()
+                if platform and platform not in platforms_done and self._filepath:
+                    platforms_done.add(platform)
+                    base_dir = os.path.dirname(self._filepath)
+                    folder_path = os.path.join(base_dir, platform)
+                    if not os.path.isdir(folder_path):
+                        os.makedirs(folder_path, exist_ok=True)
 
     def _add_entry(self):
         if self._store is None:

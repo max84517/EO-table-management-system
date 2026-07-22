@@ -93,7 +93,7 @@ def compute_derived(row: dict) -> dict:
 
     if manual_ap_provided:
         try:
-            row["Actual Payment"] = round(float(manual_ap), 1)
+            row["Actual Payment"] = round(float(manual_ap), 2)
         except (ValueError, TypeError):
             row["Actual Payment"] = None
     elif is_keyboard:
@@ -108,7 +108,7 @@ def compute_derived(row: dict) -> dict:
                 # Accept both 0.10 (already decimal) and 10 (percent)
                 rebate_pct = val if val <= 1.0 else val / 100.0
             actual_payment = gtk_liability * (1 - rebate_pct)
-            row["Actual Payment"] = round(actual_payment, 1)
+            row["Actual Payment"] = round(actual_payment, 2)
         except (ValueError, TypeError):
             row["Actual Payment"] = None
     else:
@@ -121,7 +121,7 @@ def compute_derived(row: dict) -> dict:
     else:
         try:
             gtk_orig = float(row.get("GTK \nLiability $") or 0)
-            row["Saving"] = round(gtk_orig - float(ap), 1)
+            row["Saving"] = round(gtk_orig - float(ap), 2)
         except (ValueError, TypeError):
             row["Saving"] = None
 
@@ -237,12 +237,18 @@ class ExcelDataStore:
         return len(index_row_pairs)
 
     def recalculate_all(self) -> int:
-        """Re-run compute_derived on every row and save. Returns number of rows updated.
-        Rows with empty Update Date will have it filled with the current timestamp (one-time backfill).
-        """
+        """Re-read Excel, re-round ROUND2_COLS to 2dp, re-run compute_derived, then save."""
         self._load()  # re-read from Excel first to pick up any external edits
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for row in self._rows:
+            # Ensure monetary columns stored in Excel are rounded to 2dp
+            for col in self._ROUND2_COLS:
+                v = row.get(col)
+                if v is not None and v != "":
+                    try:
+                        row[col] = round(float(v), 2)
+                    except (ValueError, TypeError):
+                        pass
             compute_derived(row)
             if not row.get("Update Date"):
                 row["Update Date"] = now

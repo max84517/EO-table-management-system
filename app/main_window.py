@@ -121,11 +121,11 @@ class MainWindow:
         ctk.CTkButton(top, text="Manage Options", width=128, height=32,
                       font=ctk.CTkFont(size=12), fg_color="gray35", hover_color="gray25",
                       command=self._open_lookup_editor).pack(side="right", padx=4)
-        ctk.CTkButton(top, text="Import Excel", width=110, height=32,
-                      font=ctk.CTkFont(size=12), fg_color="#4a4a8a", hover_color="#35356e",
-                      command=self._import_excel).pack(side="right", padx=4)
         ctk.CTkButton(top, text="Connect Data", width=110, height=32,
                       font=ctk.CTkFont(size=12), command=self._browse_file).pack(side="right", padx=4)
+        ctk.CTkButton(top, text="⟳ Refresh", width=100, height=32,
+                      font=ctk.CTkFont(size=12), fg_color="#2a4060", hover_color="#1e2e48",
+                      command=self._refresh_data).pack(side="right", padx=4)
         self._refresh_pl_btn = ctk.CTkButton(
             top, text="Refresh PL", width=110, height=32,
             font=ctk.CTkFont(size=12), fg_color="#2a6040", hover_color="#1e4a2e",
@@ -264,83 +264,6 @@ class MainWindow:
         )
         if path:
             self._load_file(path)
-
-    # ---- column name normaliser for import ----
-    _IMPORT_COL_MAP: dict[str, str] = {
-        "platform":                    "Platform",
-        "odm":                         "ODM",
-        "gbu":                         "GBU",
-        "gtk supplier":                "GTK Supplier",
-        "sub-category":                "Sub-Category",
-        "gtk liability $":             "GTK \nLiability $",
-        "gtk \nliability $":           "GTK \nLiability $",
-        "actual gtk liability $":      "Actual GTK \nLiability $",
-        "actual gtk \nliability $":    "Actual GTK \nLiability $",
-        "dm #":                        "DM #",
-        "pl":                          "PL",
-        "rebate initiative %":         "Rebate Initiative %",
-        "actual payment":              "Actual Payment",
-        "saving":                      "Saving",
-        "payment received date":       "DM Issued Date",
-        "dm issued date":              "DM Issued Date",
-        "dm issue date":               "DM Issued Date",
-        "status":                      "Status",
-    }
-
-    def _import_excel(self):
-        if self._store is None:
-            messagebox.showwarning("No Data File", "Please connect a data file first (Connect Data).")
-            return
-
-        path = filedialog.askopenfilename(
-            title="Select Import Excel File",
-            filetypes=[("Excel files", "*.xlsx *.xlsm"), ("All files", "*.*")]
-        )
-        if not path:
-            return
-
-        try:
-            import openpyxl as _openpyxl
-            wb = _openpyxl.load_workbook(path, data_only=True)
-            ws = wb.active  # use the first/active sheet
-
-            raw_headers = [
-                str(c.value).strip() if c.value is not None else ""
-                for c in next(ws.iter_rows(min_row=1, max_row=1))
-            ]
-
-            # Map each source column index → internal column name (or None to skip)
-            col_map: list[str | None] = []
-            for h in raw_headers:
-                normalized = h.lower().replace("\n", " ").replace("  ", " ").strip()
-                col_map.append(self._IMPORT_COL_MAP.get(normalized))
-
-            rows_to_import: list[dict] = []
-            for excel_row in ws.iter_rows(min_row=2, values_only=True):
-                if all(v is None for v in excel_row):
-                    continue
-                row: dict = {}
-                for i, internal_col in enumerate(col_map):
-                    if internal_col is None:
-                        continue
-                    val = excel_row[i] if i < len(excel_row) else None
-                    row[internal_col] = val
-                # skip entirely blank rows
-                if not any(row.values()):
-                    continue
-                rows_to_import.append(row)
-
-            if not rows_to_import:
-                messagebox.showinfo("Import Excel", "No data rows found in the selected file.")
-                return
-
-            count = self._store.bulk_append_rows(rows_to_import)
-            self._refresh_table()
-            self._status_var.set(f"Imported {count} rows from: {os.path.basename(path)}")
-            messagebox.showinfo("Import Complete", f"Successfully imported {count} rows.")
-
-        except Exception as exc:
-            messagebox.showerror("Import Error", f"Failed to import file:\n{exc}")
 
     def _load_file(self, path: str):
         try:
@@ -883,7 +806,7 @@ class MainWindow:
         if col == "Actual Payment":
             try:
                 amount = float(val)
-                formatted = f"${amount:,.1f}"
+                formatted = f"${amount:,.2f}"
                 if amount > 500_000:
                     formatted = "⚠ " + formatted
                 return formatted
@@ -891,12 +814,12 @@ class MainWindow:
                 return str(val)
         if col == "Saving":
             try:
-                return f"${float(val):,.1f}"
+                return f"${float(val):,.2f}"
             except (ValueError, TypeError):
                 return str(val)
         if col == "GTK \nLiability $":
             try:
-                return f"${float(val):,.1f}"
+                return f"${float(val):,.2f}"
             except (ValueError, TypeError):
                 return str(val)
             except (ValueError, TypeError):
@@ -1050,6 +973,23 @@ class MainWindow:
     def _open_lookup_editor(self):
         dlg = LookupEditorDialog(self._root)
         self._root.wait_window(dlg)
+
+    # --------------------------------------------------------- Data refresh ---
+    def _refresh_data(self):
+        """Re-read Excel, recalculate KB/FP Actual Payment & Saving, round all to 2dp, refresh table."""
+        if self._store is None:
+            messagebox.showwarning("No file", "Please open an Excel file first.")
+            return
+        n = self._store.recalculate_all()
+        kb_fp_count = sum(
+            1 for r in self._store.get_rows()
+            if str(r.get("Sub-Category") or "").strip() in ("Keyboard", "Fingerprint/Touchpad")
+        )
+        self._refresh_table()
+        self._status_var.set(
+            f"Refreshed {n} rows — {kb_fp_count} KB/FP rows recalculated"
+            f" (Actual Payment & Saving, 2dp)."
+        )
 
     # ---------------------------------------------------------- PL refresh ---
     def _refresh_pl(self):

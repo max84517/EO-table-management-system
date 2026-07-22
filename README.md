@@ -8,38 +8,36 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 - **Dark-mode UI** — built with CustomTkinter
 - **Interactive data table** — columns: Sub-Category → Platform → GTK Supplier → GTK Liability $ → Actual Payment → Saving → Status → DM Issued Quarter → Update Date; click any header to sort
 - **Status indicators** (● dot colour based on `Status` field):
-  - 🔴 Red — **GTK Deduction Phase** (`1st Ver Complete`, `2nd Ver Complete`)
-  - 🟡 Yellow — **Contract & DM Phase** (`Wait for Contract Approval`, `Wait for Contract Sign`, `Wait for DM`)
-  - 🟢 Green — **Complete** (`Finish`)
-  - 🔵 Blue — **Halt**
+  - 🔴 Red — `Preparing for 1st Ver`, `1st Ver Complete`
+  - 🟡 Yellow — `2nd Ver Complete`, `Wait for Contract Approval`, `Wait for Contract Sign`, `Wait for DM`
+  - 🟢 Green — `Finish`
+  - 🔵 Blue — `Halt`
 - **Default sort** — newest entries (by Update Date) shown first
 - **Search / filter** — real-time text filter across all visible columns
 - **Sub-Category filter** — `Sub-Category ▾` button in filter bar; multi-select; remembered per user
-- **Phase filter** — `Phase ▾` button in filter bar; multi-select by phase label (GTK Deduction Phase / Contract & DM Phase / Complete / Halt / Unknown); remembered per user
-- **Quarter filter** — `Quarter ▾` button in filter bar; multi-select by DM Issued Quarter value (dynamic, based on data); remembered per user
+- **Phase filter** — `Phase ▾` button in filter bar; multi-select by phase label; remembered per user
+- **Quarter filter** — `Quarter ▾` button in filter bar; multi-select by DM Issued Quarter value; remembered per user
 - **Per-column filter** — right-click any column header to open a checkbox filter popup; filtered columns are marked with ◆; filter state is remembered per user
-- **Add & edit entries** — form dialog with:
-  - Free-text fields for Platform, GTK Liability, DM #, PL
-  - Dropdown selectors (A-Z sorted) for ODM, GBU, Sub-Category, Status
-  - **GTK Supplier** uses a scrollable listbox dropdown (mouse-wheel supported)
-  - Dark-mode calendar date picker for DM Issued Date (blank by default, clearable with ✕; enabled only when Status = Finish)
-  - Platform → PL auto-mapping (case-insensitive lookup from PL map; manual override supported)
-  - **Sub-Category smart form rules**:
-    - `Keyboard` / `Fingerprint/Touchpad` — Rebate Initiative % and Actual GTK Liability shown; Actual Payment is **auto-calculated** (locked)
-    - All other sub-categories — those fields hidden; Actual Payment is **manually entered**
-  - **Rebate Initiative %** — entered as integer (e.g. `10` for 10%); default `10`
+- **Add Entries** — opens a multi-row form with:
+  - Shared fields at top: Platform, ODM, GBU, Status, DM #, PL
+  - Scrollable per-supplier rows: Sub-Category, GTK Supplier, GTK Liability $, Actual GTK Liability $, Rebate Initiative %, Actual Payment, DM Issued Date
+  - Compact date picker per row; trash 🗑 button to delete rows; rows renumber automatically
+  - **Sub-Category smart rules**: `Keyboard` / `Fingerprint/Touchpad` — Actual Payment auto-calculated (locked); all others — manually entered
+- **Manage Platform** — search for an existing platform by name (live autocomplete as you type); loads all supplier rows for that platform in an editable grid; supports adding new rows; **Save All** updates all changes in one operation
+- **Edit entry** — double-click any row to open the single-entry edit dialog
 - **ESR warning** — cells where Actual Payment > 500,000 show a ⚠ icon; hover to see "ESR Needed" tooltip
-- **Auto-calculated fields**:
-  - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — for Keyboard / Fingerprint/Touchpad; rounded to 1 decimal
-  - `Saving = GTK Liability − Actual Payment` — rounded to 1 decimal
-  - `ESR need (Y/N)` — auto-set: `Y` if Actual Payment > 500,000, else `N`
-  - `DM Issued Quarter` — HP fiscal quarter derived from DM Issued Date (Q1 = Nov/Dec/Jan, Q2 = Feb/Mar/Apr, Q3 = May/Jun/Jul, Q4 = Aug/Sep/Oct)
+- **Auto-calculated fields** (all rounded to **2 decimal places**):
+  - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — for Keyboard / Fingerprint/Touchpad
+  - `Saving = GTK Liability − Actual Payment`
+  - `ESR need (Y/N)` — `Y` if Actual Payment > 500,000, else `N`
+  - `DM Issued Quarter` — HP fiscal quarter derived from DM Issued Date
   - `Update Date` — auto-set to current timestamp on every save
+- **⟳ Refresh** — re-reads the connected Excel file, recalculates Actual Payment & Saving for all KB/FP rows from source values, and ensures all monetary fields are rounded to 2 decimal places
 - **Connect Data** — connect to the target Excel workbook (stores path per user)
-- **Auto-create Platform folder** — when adding a new entry, a folder named after the Platform is automatically created in the same directory as the connected Excel file; if the folder already exists, an info message is shown
-- **Summary bar** — right side of the status bar shows the current filtered row count, and totals for Actual Payment and Saving
-- **PL Mapper** — reads `.xlsb`/`.xlsx` source files from `data/PL Source/`, generates `data/PL output/PL map.xlsx`; **Refresh PL** button re-runs in background
-- **Manage Options** — add/remove dropdown choices stored in `lookups.json`; bulk import from Excel supported
+- **Auto-create Platform folder** — when adding a new entry, a folder named after the Platform is automatically created in the same directory as the connected Excel file
+- **Summary bar** — shows current filtered row count, and totals for Actual Payment and Saving
+- **PL Mapper** — reads `.xlsb`/`.xlsx` source files from `data/PL Source/`; **Refresh PL** button re-runs in background
+- **Manage Options** — add/remove dropdown choices stored in `lookups.json`
 - **Writes back to Excel** — updates the `Data` sheet in the source workbook
 
 ## Fiscal Quarter Logic

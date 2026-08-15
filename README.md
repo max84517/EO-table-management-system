@@ -6,13 +6,13 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
 
 - **Per-user login** — select or create a user at startup; each user's Excel file path is remembered separately; per-column filters and phase filter are saved per user and restored on next login
 - **Dark-mode UI** — built with CustomTkinter
-- **Interactive data table** — columns: Sub-Category → Platform → GTK Supplier → GTK Liability $ → Actual Payment → Saving → Status → DM Issued Quarter → Update Date; click any header to sort
+- **Interactive data table** — columns: Sub-Category → Platform → GTK Supplier → GTK Liability $ → Actual Payment → Saving → Status → DM Issued Quarter → Added Date; click any header to sort
 - **Status indicators** (● dot colour based on `Status` field):
   - 🔴 Red — `Preparing for 1st Ver`, `1st Ver Complete`
   - 🟡 Yellow — `2nd Ver Complete`, `Wait for Contract Approval`, `Wait for Contract Sign`, `Wait for DM`
   - 🟢 Green — `Finish`
   - 🔵 Blue — `Halt`
-- **Default sort** — newest entries (by Update Date) shown first
+- **Default sort** — newest entries (by Added Date) shown first
 - **Search / filter** — real-time text filter across all visible columns
 - **Sub-Category filter** — `Sub-Category ▾` button in filter bar; multi-select; remembered per user
 - **Phase filter** — `Phase ▾` button in filter bar; multi-select by phase label; remembered per user
@@ -25,13 +25,17 @@ A dark-mode desktop application for managing EO (Engagement/Obligation) tracking
   - **Sub-Category smart rules**: `Keyboard` / `Fingerprint/Touchpad` — Actual Payment auto-calculated (locked); all others — manually entered
 - **Manage Platform** — search for an existing platform by name (live autocomplete as you type); loads all supplier rows for that platform in an editable grid; supports adding new rows; **Save All** updates all changes in one operation
 - **Edit entry** — double-click any row to open the single-entry edit dialog
+- **Multi-select & Batch Update** — checkbox column (☐/☑) in the leftmost column:
+  - Click the checkbox cell or **Ctrl+click** anywhere on a row to toggle selection
+  - Click the header checkbox to select / deselect all currently filtered rows
+  - When rows are selected, **☑ Batch Update Status (N)** button appears; click to apply a new Status to all selected rows at once
 - **ESR warning** — cells where Actual Payment > 500,000 show a ⚠ icon; hover to see "ESR Needed" tooltip
 - **Auto-calculated fields** (all rounded to **2 decimal places**):
   - `Actual Payment = Actual GTK Liability × (1 − Rebate %)` — for Keyboard / Fingerprint/Touchpad
   - `Saving = GTK Liability − Actual Payment`
   - `ESR need (Y/N)` — `Y` if Actual Payment > 500,000, else `N`
   - `DM Issued Quarter` — HP fiscal quarter derived from DM Issued Date
-  - `Update Date` — auto-set to current timestamp on every save
+  - `Added Date` — set once on creation; never modified by subsequent edits
 - **⟳ Refresh** — re-reads the connected Excel file, recalculates Actual Payment & Saving for all KB/FP rows from source values, and ensures all monetary fields are rounded to 2 decimal places
 - **Connect Data** — connect to the target Excel workbook (stores path per user)
 - **Auto-create Platform folder** — when adding a new entry, a folder named after the Platform is automatically created in the same directory as the connected Excel file

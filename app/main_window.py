@@ -57,7 +57,7 @@ COL_WIDTHS = {
     "Saving": 120,
     "Status": 130,
     "DM Issued Quarter": 165,
-    "Update Date": 175,
+    "Added Date": 175,
 }
 
 
@@ -85,7 +85,7 @@ class MainWindow:
         self._filepath: Optional[str] = None
         self._current_user: Optional[str] = None
         self._pl_map: dict[str, str] = load_pl_map()  # Family -> Product Line 2
-        self._sort_col: str = "Update Date"  # default: newest first
+        self._sort_col: str = "Added Date"  # default: newest first
         self._sort_asc: bool = False
         self._filter_var = tk.StringVar()
         self._filter_var.trace_add("write", lambda *_: self._refresh_table())
@@ -106,7 +106,7 @@ class MainWindow:
 
         self._build_ui()
         # Set initial sort arrow
-        self._tree.heading("Update Date", text="Update Date ▼")
+        self._tree.heading("Added Date", text="Added Date ▼")
 
     # ------------------------------------------------------------------ UI ---
     def _build_ui(self):
@@ -1088,14 +1088,12 @@ class MainWindow:
             new_status = chosen.get().strip()
             if not new_status:
                 return
-            now = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             all_rows = self._store.get_rows()
             pairs = []
             for idx in self._checked_store_indices:
                 if 0 <= idx < len(all_rows):
                     updated = dict(all_rows[idx])
                     updated["Status"] = new_status
-                    updated["Update Date"] = now
                     pairs.append((idx, updated))
             if pairs:
                 self._store.bulk_update_rows(pairs)

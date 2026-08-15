@@ -31,7 +31,7 @@ ALL_COLUMNS = [
     "Saving",
     "DM Issued Date",
     "DM Issued Quarter",
-    "Update Date",
+    "Added Date",
 ]
 
 DISPLAY_COLUMNS = [
@@ -43,7 +43,7 @@ DISPLAY_COLUMNS = [
     "Saving",
     "Status",
     "DM Issued Quarter",
-    "Update Date",
+    "Added Date",
 ]
 
 
@@ -189,6 +189,9 @@ class ExcelDataStore:
                 if h in self._ROUND2_COLS and isinstance(v, float):
                     v = round(v, 2)
                 row[h] = v
+            # backward compat: old files used "Update Date" header
+            if "Update Date" in row and "Added Date" not in row:
+                row["Added Date"] = row.pop("Update Date")
             rows.append(row)
         self._rows = rows
 
@@ -198,15 +201,15 @@ class ExcelDataStore:
     # ----------------------------------------------------------------- write --
     def append_row(self, row: dict):
         row = compute_derived(row)
-        row["Update Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        row["Added Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._rows.append(row)
         self._save()
 
     def update_row(self, index: int, row: dict):
         row = compute_derived(row)
-        row["Update Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self._rows.pop(index)   # remove from original position
-        self._rows.append(row)  # re-insert at the bottom
+        original = self._rows[index] if 0 <= index < len(self._rows) else {}
+        row["Added Date"] = original.get("Added Date") or row.get("Added Date") or ""
+        self._rows[index] = row  # update in place; preserves sort-stable position
         self._save()
 
     def delete_row(self, index: int):
@@ -219,7 +222,7 @@ class ExcelDataStore:
         count = 0
         for row in rows:
             row = compute_derived(row)
-            row["Update Date"] = now
+            row["Added Date"] = now
             self._rows.append(row)
             count += 1
         if count:
@@ -228,10 +231,11 @@ class ExcelDataStore:
 
     def bulk_update_rows(self, index_row_pairs: list[tuple[int, dict]]) -> int:
         """Update multiple rows by store index. Returns number updated."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for idx, row in sorted(index_row_pairs, reverse=True):
             row = compute_derived(row)
-            row["Update Date"] = now
+            # Preserve original Added Date
+            original = self._rows[idx] if 0 <= idx < len(self._rows) else {}
+            row["Added Date"] = original.get("Added Date") or row.get("Added Date") or ""
             self._rows[idx] = row
         self._save()
         return len(index_row_pairs)
@@ -250,8 +254,7 @@ class ExcelDataStore:
                     except (ValueError, TypeError):
                         pass
             compute_derived(row)
-            if not row.get("Update Date"):
-                row["Update Date"] = now
+            # Never overwrite Added Date — it is set only on creation
         self._save()
         return len(self._rows)
 

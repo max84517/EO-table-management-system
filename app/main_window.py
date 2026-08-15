@@ -100,6 +100,7 @@ class MainWindow:
         self._subcat_filter: set[str] = set()
         # Checked rows (store indices)
         self._checked_store_indices: set[int] = set()
+        self._check_anchor_iid: Optional[str] = None  # anchor for Shift+click range
 
         self._segment_active: set = set()  # kept for compat
         self._all_segments: list = []
@@ -257,6 +258,8 @@ class MainWindow:
         self._tree.bind("<Button-1>", self._on_tree_click)
         # Ctrl+click → toggle checkbox on any column
         self._tree.bind("<Control-Button-1>", self._on_ctrl_click)
+        # Shift+click → range select between anchor and current row
+        self._tree.bind("<Shift-Button-1>", self._on_shift_click)
         # Right-click on heading → column filter popup
         self._tree.bind("<Button-3>", self._on_header_right_click)
         # Tooltip for ⚠ ESR cells
@@ -978,14 +981,15 @@ class MainWindow:
         """Toggle checkbox when the checkbox column (col #1) is clicked."""
         region = self._tree.identify_region(event.x, event.y)
         if region == "heading":
-            return  # heading handled by heading command
+            return
         if self._tree.identify_column(event.x) != "#1":
-            return  # only act on the checkbox column
+            return
         iid = self._tree.identify_row(event.y)
         if not iid:
             return
         try:
             self._toggle_row_check(int(iid))
+            self._check_anchor_iid = iid
         except ValueError:
             pass
 
@@ -999,9 +1003,52 @@ class MainWindow:
             return
         try:
             self._toggle_row_check(int(iid))
+            self._check_anchor_iid = iid
         except ValueError:
             pass
-        return "break"  # prevent default ctrl-selection behaviour
+        return "break"
+
+    def _on_shift_click(self, event: tk.Event):
+        """Shift+click selects all rows between the anchor and the clicked row."""
+        region = self._tree.identify_region(event.x, event.y)
+        if region not in ("cell", "tree"):
+            return
+        iid = self._tree.identify_row(event.y)
+        if not iid:
+            return
+        all_iids = self._tree.get_children()
+        anchor = self._check_anchor_iid if self._check_anchor_iid in all_iids else iid
+        try:
+            a = all_iids.index(anchor)
+            b = all_iids.index(iid)
+        except ValueError:
+            return
+        lo, hi = min(a, b), max(a, b)
+        for idx_in_tree in range(lo, hi + 1):
+            try:
+                self._checked_store_indices.add(int(all_iids[idx_in_tree]))
+            except ValueError:
+                pass
+        # Refresh all affected checkbox cells
+        for idx_in_tree in range(lo, hi + 1):
+            r_iid = all_iids[idx_in_tree]
+            if self._tree.exists(r_iid):
+                cur_vals = list(self._tree.item(r_iid, "values"))
+                try:
+                    cur_vals[0] = "☑" if int(r_iid) in self._checked_store_indices else "☐"
+                except ValueError:
+                    pass
+                self._tree.item(r_iid, values=cur_vals)
+        self._update_batch_btn()
+        # Update header tick
+        all_rows = self._store.get_rows() if self._store else []
+        store_idx_map = {id(r): i for i, r in enumerate(all_rows)}
+        filtered_indices = {store_idx_map.get(id(r), -1) for r in getattr(self, "_current_rows", [])} - {-1}
+        if filtered_indices and filtered_indices.issubset(self._checked_store_indices):
+            self._tree.heading("☐", text="☑")
+        else:
+            self._tree.heading("☐", text="☐")
+        return "break"
 
     def _toggle_row_check(self, store_idx: int):
         """Toggle a single row in/out of the checked set and refresh its display."""

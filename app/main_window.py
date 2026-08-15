@@ -23,7 +23,8 @@ from app.user_selector import UserSelectorDialog
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+CONFIG_PATH   = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+LOOKUPS_PATH  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lookups.json")
 
 # Phase filter labels and their status sets
 _PHASE_LABELS = [
@@ -97,6 +98,8 @@ class MainWindow:
         self._quarter_filter: set[str] = set()
         # Sub-Category filter: empty set = all (no filter)
         self._subcat_filter: set[str] = set()
+        # Checked rows (store indices)
+        self._checked_store_indices: set[int] = set()
 
         self._segment_active: set = set()  # kept for compat
         self._all_segments: list = []
@@ -113,6 +116,12 @@ class MainWindow:
         top.pack_propagate(False)
 
         # Right-side buttons (packed before path label to guarantee visibility)
+        self._batch_btn = ctk.CTkButton(
+            top, text="☑ Batch Update Status", width=175, height=32,
+            font=ctk.CTkFont(size=12), fg_color="#2a6060", hover_color="#1e4848",
+            command=self._batch_update_status, state="disabled",
+        )
+        self._batch_btn.pack(side="right", padx=(4, 4))
         ctk.CTkButton(top, text="+ Add Entries", width=120, height=32,
                       font=ctk.CTkFont(size=12), command=self._add_multiple_entries).pack(side="right", padx=(4, 12))
         ctk.CTkButton(top, text="Manage Platform", width=132, height=32,
@@ -189,21 +198,21 @@ class MainWindow:
         style.configure("Custom.Treeview",
                         background="#2b2b2b",
                         foreground="white",
-                        rowheight=34,
+                        rowheight=38,
                         fieldbackground="#2b2b2b",
-                        font=("Arial", 12))
+                        font=("Arial", 13))
         style.configure("Custom.Treeview.Heading",
                         background="#1f538d",
                         foreground="white",
                         relief="flat",
-                        font=("Arial", 12, "bold"))
+                        font=("Arial", 13, "bold"))
         style.map("Custom.Treeview",
                   background=[("selected", "#1f538d")],
                   foreground=[("selected", "white")])
         style.map("Custom.Treeview.Heading",
                   background=[("active", "#174b7a")])
 
-        cols = ["●"] + DISPLAY_COLUMNS
+        cols = ["☐"] + DISPLAY_COLUMNS
         self._tree = ttk.Treeview(table_frame, columns=cols, show="headings",
                                   style="Custom.Treeview", selectmode="browse")
 
@@ -220,9 +229,14 @@ class MainWindow:
         for col in cols:
             w = COL_WIDTHS.get(col, 120)
             display_text = col.replace("\n", " ")
-            self._tree.heading(col, text=display_text, anchor="center",
-                               command=lambda c=col: self._sort_by(c))
-            self._tree.column(col, width=w, minwidth=40, stretch=(col != "●"), anchor="center")
+            if col == "☐":
+                self._tree.heading(col, text="☐", anchor="center",
+                                   command=self._toggle_all_check)
+                self._tree.column(col, width=44, minwidth=44, stretch=False, anchor="center")
+            else:
+                self._tree.heading(col, text=display_text, anchor="center",
+                                   command=lambda c=col: self._sort_by(c))
+                self._tree.column(col, width=w, minwidth=40, stretch=True, anchor="center")
 
         self._col_header_base = {c: c.replace("\n", " ") for c in cols}  # track base label for sort arrows
 
@@ -239,6 +253,10 @@ class MainWindow:
 
         # Double-click to edit
         self._tree.bind("<Double-1>", self._on_double_click)
+        # Single click → checkbox toggle on col #1
+        self._tree.bind("<Button-1>", self._on_tree_click)
+        # Ctrl+click → toggle checkbox on any column
+        self._tree.bind("<Control-Button-1>", self._on_ctrl_click)
         # Right-click on heading → column filter popup
         self._tree.bind("<Button-3>", self._on_header_right_click)
         # Tooltip for ⚠ ESR cells
@@ -289,11 +307,11 @@ class MainWindow:
             return
         col_id = self._tree.identify_column(event.x)
         col_idx = int(col_id.lstrip("#")) - 1
-        cols = ["●"] + DISPLAY_COLUMNS
+        cols = ["☐"] + DISPLAY_COLUMNS
         if col_idx < 0 or col_idx >= len(cols):
             return
         col = cols[col_idx]
-        if col == "●":
+        if col == "☐":
             return
         self._open_col_filter(col, event.x_root, event.y_root)
 
@@ -756,10 +774,16 @@ class MainWindow:
 
     def _populate_tree(self, rows: list[dict]):
         self._tree.delete(*self._tree.get_children())
+        all_rows = self._store.get_rows()
+        store_idx_map = {id(r): i for i, r in enumerate(all_rows)}
+
         for i, row in enumerate(rows):
             stripe = (i % 2 == 1)
+            store_idx = store_idx_map.get(id(row), -1)
+            checked = store_idx in self._checked_store_indices
+            chk_char = "☑" if checked else "☐"
 
-            values = ["●"] + [self._fmt_col(c, row.get(c)) for c in DISPLAY_COLUMNS]
+            values = [chk_char] + [self._fmt_col(c, row.get(c)) for c in DISPLAY_COLUMNS]
 
             status = str(row.get("Status") or "").strip()
             if status in _STATUS_GREEN:
@@ -773,8 +797,15 @@ class MainWindow:
             else:
                 tag = "stripe" if stripe else ""
 
-            self._tree.insert("", "end", iid=str(id(row)) + str(i),
-                               values=values, tags=(tag,))
+            iid = str(store_idx) if store_idx >= 0 else f"_tmp_{i}"
+            self._tree.insert("", "end", iid=iid, values=values, tags=(tag,))
+
+        # Update header checkbox: ☑ if all filtered rows are checked, else ☐
+        filtered_indices = {store_idx_map.get(id(r), -1) for r in rows} - {-1}
+        if filtered_indices and filtered_indices.issubset(self._checked_store_indices):
+            self._tree.heading("☐", text="☑")
+        else:
+            self._tree.heading("☐", text="☐")
 
         # Store rows list for edit lookup
         self._current_rows = rows
@@ -942,6 +973,150 @@ class MainWindow:
                         f'New folder created at:\n{folder_path}',
                         parent=self._root,
                     )
+
+    def _on_tree_click(self, event: tk.Event):
+        """Toggle checkbox when the checkbox column (col #1) is clicked."""
+        region = self._tree.identify_region(event.x, event.y)
+        if region == "heading":
+            return  # heading handled by heading command
+        if self._tree.identify_column(event.x) != "#1":
+            return  # only act on the checkbox column
+        iid = self._tree.identify_row(event.y)
+        if not iid:
+            return
+        try:
+            self._toggle_row_check(int(iid))
+        except ValueError:
+            pass
+
+    def _on_ctrl_click(self, event: tk.Event):
+        """Ctrl+click anywhere on a row toggles its checkbox."""
+        region = self._tree.identify_region(event.x, event.y)
+        if region not in ("cell", "tree"):
+            return
+        iid = self._tree.identify_row(event.y)
+        if not iid:
+            return
+        try:
+            self._toggle_row_check(int(iid))
+        except ValueError:
+            pass
+        return "break"  # prevent default ctrl-selection behaviour
+
+    def _toggle_row_check(self, store_idx: int):
+        """Toggle a single row in/out of the checked set and refresh its display."""
+        if store_idx in self._checked_store_indices:
+            self._checked_store_indices.discard(store_idx)
+        else:
+            self._checked_store_indices.add(store_idx)
+        self._update_batch_btn()
+        # Update the checkbox cell and header without full redraw
+        iid = str(store_idx)
+        if self._tree.exists(iid):
+            cur_vals = list(self._tree.item(iid, "values"))
+            cur_vals[0] = "☑" if store_idx in self._checked_store_indices else "☐"
+            self._tree.item(iid, values=cur_vals)
+        # Update header tick
+        all_rows = self._store.get_rows() if self._store else []
+        store_idx_map = {id(r): i for i, r in enumerate(all_rows)}
+        filtered_indices = {store_idx_map.get(id(r), -1) for r in getattr(self, "_current_rows", [])} - {-1}
+        if filtered_indices and filtered_indices.issubset(self._checked_store_indices):
+            self._tree.heading("☐", text="☑")
+        else:
+            self._tree.heading("☐", text="☐")
+
+    def _toggle_all_check(self):
+        """Select all filtered rows if not all selected; otherwise deselect all."""
+        if not self._store:
+            return
+        all_rows = self._store.get_rows()
+        store_idx_map = {id(r): i for i, r in enumerate(all_rows)}
+        filtered_indices = {store_idx_map.get(id(r), -1) for r in getattr(self, "_current_rows", [])} - {-1}
+        if not filtered_indices:
+            return
+        if filtered_indices.issubset(self._checked_store_indices):
+            # Deselect all filtered
+            self._checked_store_indices -= filtered_indices
+        else:
+            # Select all filtered
+            self._checked_store_indices |= filtered_indices
+        self._update_batch_btn()
+        self._refresh_table()
+
+    def _update_batch_btn(self):
+        n = len(self._checked_store_indices)
+        if n:
+            self._batch_btn.configure(
+                state="normal",
+                text=f"☑ Batch Update Status ({n})",
+                fg_color="#2a6060", hover_color="#1e4848",
+            )
+        else:
+            self._batch_btn.configure(
+                state="disabled",
+                text="☑ Batch Update Status",
+                fg_color="#2a6060",
+            )
+
+    def _batch_update_status(self):
+        """Open a popup to choose a status and apply it to all checked rows."""
+        if not self._checked_store_indices or not self._store:
+            return
+        import json as _json
+        try:
+            with open(LOOKUPS_PATH, "r", encoding="utf-8") as f:
+                lk = _json.load(f)
+        except Exception:
+            lk = {}
+        status_vals = lk.get("Status", [])
+
+        popup = ctk.CTkToplevel(self._root)
+        popup.title("Batch Update Status")
+        popup.resizable(False, False)
+        popup.grab_set()
+
+        ctk.CTkLabel(popup, text=f"Apply status to {len(self._checked_store_indices)} selected row(s):",
+                     font=ctk.CTkFont(size=13)).pack(padx=20, pady=(16, 8))
+
+        chosen = tk.StringVar(value=status_vals[0] if status_vals else "")
+        from app.entry_form import ScrollableDropdown
+        ScrollableDropdown(popup, variable=chosen, values=status_vals,
+                           width=260, height=34,
+                           font=("Arial", 13)).pack(padx=20, pady=(0, 16))
+
+        def _apply():
+            new_status = chosen.get().strip()
+            if not new_status:
+                return
+            now = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            all_rows = self._store.get_rows()
+            pairs = []
+            for idx in self._checked_store_indices:
+                if 0 <= idx < len(all_rows):
+                    updated = dict(all_rows[idx])
+                    updated["Status"] = new_status
+                    updated["Update Date"] = now
+                    pairs.append((idx, updated))
+            if pairs:
+                self._store.bulk_update_rows(pairs)
+            self._checked_store_indices.clear()
+            self._update_batch_btn()
+            self._refresh_table()
+            self._status_var.set(f"Batch updated {len(pairs)} rows → Status: {new_status}")
+            popup.destroy()
+
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(padx=20, pady=(0, 16))
+        ctk.CTkButton(btn_row, text="Apply", width=110, height=32,
+                      font=ctk.CTkFont(size=13), command=_apply).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Cancel", width=90, height=32,
+                      font=ctk.CTkFont(size=13), fg_color="gray35", hover_color="gray25",
+                      command=popup.destroy).pack(side="left")
+
+        popup.update_idletasks()
+        x = self._root.winfo_x() + self._root.winfo_width() // 2 - popup.winfo_reqwidth() // 2
+        y = self._root.winfo_y() + self._root.winfo_height() // 2 - popup.winfo_reqheight() // 2
+        popup.geometry(f"+{x}+{y}")
 
     def _on_double_click(self, event):
         item = self._tree.focus()
